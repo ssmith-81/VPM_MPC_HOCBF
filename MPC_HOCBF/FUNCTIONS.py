@@ -44,8 +44,8 @@ def acados_settings(N_horizon, T_horizon):
 		# Q = np.array([ 10, 0, 10, 0, 10, 0]) # Assuming there are only 3 state outputs, State = [x, vx, y, vy, z, vz]
 		# R = np.array([ 1e-4, 1e-4, 1e-4]) # Three control inputs acceleration
 		#Q = np.array([ 1000, 0, 1500, 0, 1500, 0]) # Assuming there are only 3 state outputs, State = [x, vx, y, vy, z, vz]
-		Q = np.array([ 100, 50, 100, 50, 50, 20]) # 50-80
-		R = np.array([ 5, 5, 5]) # 5 is goot
+		Q = np.array([ 60, 30, 60, 30, 50, 20]) # 50-80 80-100 in position 40-50 on velocity
+		R = np.array([ 8, 8, 5]) # 5 is good
 		
 
 		ocp.cost.W_e = np.diag(Q)  # inputs are not decision variables at the end of prediction horizon
@@ -149,7 +149,7 @@ def acados_settings(N_horizon, T_horizon):
 		# Usage of slack variables to relax the above hard constraints
 		ocp.constraints.Jsh = np.eye(1)
 		# # slacks
-		L2_pen = 1e3 # 1e3
+		L2_pen = 1e4 # 1e3
 		L1_pen = 1e2  #1
 
 		ocp.cost.Zl = L2_pen*np.ones((1,)) # Diagonal of hessian WRT lower slack
