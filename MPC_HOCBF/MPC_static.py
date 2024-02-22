@@ -116,7 +116,10 @@ VZ = []
 
 class clover:
 
-	def __init__(self, FLIGHT_ALTITUDE = 0.7, RATE = 50, RADIUS = 3.5, V_des = 0.6, N_horizon=15, T_horizon=3.0, REF_FRAME = 'map'): # rate = 50hz radius = 5m cycle_s = 25
+	def __init__(self, FLIGHT_ALTITUDE = 0.7, RATE = 50, RADIUS = 3.5, V_des = 0.6, N_horizon=25, T_horizon=5.0, REF_FRAME = 'map'): # rate = 50hz radius = 5m cycle_s = 25 N_h = 25, T_h = 5
+
+		# Note on N_horizon and T_horizon: with how I have things now, set T_horizon higher to react quicker to obstacles, but if you increase, this increases the time ahead of the first shooting node some 
+		# which is which may increase speed some. N_horizon, increase to slow drone down some and react faster to obstacles. Lower, increases time to first shoting node and increases speed
 
 		# Define the sink location and strength
 		self.g_sink = 2.00
@@ -552,7 +555,7 @@ class clover:
 			
 			target.coordinate_frame = 1 #MAV_FRAME_LOCAL_NED  # =1
 			
-			target.type_mask = 64+128+256+2048 # Use everything! 1024-> forget yaw
+			target.type_mask = 8+16+32+64+128+256+2048 # Use everything! 1024-> forget yaw
 			#target.type_mask =  3576 # Use only position #POSITION_TARGET_TYPEMASK_VX_IGNORE | POSITION_TARGET_TYPEMASK_VY_IGNORE | POSITION_TARGET_TYPEMASK_VZ_IGNORE | POSITION_TARGET_TYPEMASK_AX_IGNORE | POSITION_TARGET_TYPEMASK_AY_IGNORE |POSITION_TARGET_TYPEMASK_AZ_IGNORE | POSITION_TARGET_TYPEMASK_FORCE_IGNORE | POSITION_TARGET_TYPEMASK_YAW_IGNORE | POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE # = 3576
 			#target.type_mask =  3520 # Use position and velocity
 			#target.type_mask =  3072 # Use position, velocity, and acceleration
@@ -584,14 +587,14 @@ class clover:
 					# constraint condition to a trivial case
 
 					# Set the distance from the obstacle
-					r = 2.7
+					r = 2.5
 				
 					# self.acados_solver.set(j, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
 					self.acados_solver.set(j, "p", np.array([7,0,0,7,0,0, r])) # Assuming a static obstacle
 				else:
 					# An obstacle was detected, therefore apply the constraints (assuming a static obstacle for now)
 					# Set the distance from the obstacle
-					r = 2.7#self.SF + max(self.a_fit, self.b_fit)
+					r = 2.5#self.SF + max(self.a_fit, self.b_fit)
 
 					# self.acados_solver.set(j, "p", np.array([self.xc,0,0,self.yc,0,0,r])) # Assuming a static obstacle
 					self.acados_solver.set(j, "p", np.array([7,0,0,7,0,0, r])) # Assuming a static obstacle
@@ -604,13 +607,13 @@ class clover:
 				# an obstacle was not detected, so set the
 				# constraint condition to a trivial case
 				# Set the distance from the obstacle
-				r = 2.7
+				r = 2.5
 				# self.acados_solver.set(self.N_horizon, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
 				self.acados_solver.set(self.N_horizon, "p", np.array([7,0,0,7,0,0, r])) # Assuming a static obstacle
 			else:
 				# An obstacle was detected, therefore apply the constraints (assuming a static obstacle for now)
 				# Set the distance from the obstacle
-				r = 2.7#self.SF + max(self.a_fit, self.b_fit)
+				r = 2.5#self.SF + max(self.a_fit, self.b_fit)
 
 				# Assuming a static obstacle
 				# self.acados_solver.set(self.N_horizon, "p", np.array([self.xc,0,0,self.yc,0,0,r])) # State = [x, vx, ax, y, vy, ay]
@@ -625,11 +628,12 @@ class clover:
 
 			# update initial condition
 			x1 = self.acados_solver.get(1, "x")
+			x5 = self.acados_solver.get(5, "x")
 	
 
 			# Gather position for publishing
-			target.position.x = x0[0]
-			target.position.y = x0[2]
+			target.position.x = x5[0]
+			target.position.y = x5[2]
 			target.position.z = self.FLIGHT_ALTITUDE
 			
 			# Gather velocity for publishing
@@ -671,7 +675,7 @@ class clover:
 			roll = euler_angles[2] #+ math.pi
 			yaw = -euler_angles[0]+math.pi 
 			# x_new = np.array([x_clover, x1[1], y_clover, x1[3], z_clover, x1[5]])
-			x_new = np.array([x1[0], telem.vx, x1[2], telem.vy, x1[4], telem.vz])
+			x_new = np.array([x_clover, telem.vx, y_clover, telem.vy, z_clover, telem.vz])
 			# self.acados_solver.set(0, "lbx", x_new) # Update the zero shooting node position
 			# self.acados_solver.set(0, "ubx", x_new)
 			self.acados_solver.set(0, "lbx", x1) # Update the zero shooting node position
