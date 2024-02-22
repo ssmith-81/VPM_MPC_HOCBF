@@ -14,6 +14,10 @@ from gazebo_msgs.msg import ModelState, LinkStates
 import tf
 from sensor_msgs.msg import Imu, LaserScan
 
+from panel_functions import CLOVER_COMPONENTS, CLOVER_STREAM_GEOMETRIC_INTEGRAL, CLOVER_KUTTA, CLOVER_STREAMLINE, CLOVER_noOBSTACLE
+from scipy.interpolate import griddata
+
+
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -27,10 +31,12 @@ from mavros_msgs.srv import *
 
 import h5py  # use for data logging of larges sets of data
 from skimage.measure import EllipseModel
+from matplotlib.patches import Ellipse
+
 
 from tf.transformations import euler_from_quaternion
 
-rospy.init_node('Helix')
+rospy.init_node('MPC')
 
 get_telemetry = rospy.ServiceProxy('get_telemetry', srv.GetTelemetry)
 navigate = rospy.ServiceProxy('navigate', srv.Navigate)
@@ -52,20 +58,46 @@ PI_2 = math.pi/2
 # Debugging and logging
 xf = []  # This gathers the clover position
 yf = []
+# position command from MPC dyamic output
 xcom = []
 ycom = []
 YawF = []
 YawC = []
 
-# readings of modified/extended obstacle
+# readings obstacle
 xa = []
 ya = []
+#ellipse estimation
+a_fit = []
+b_fit = []
+theta = []
+xc = []
+yc = []
 
 # Analyze control input (see if error is being minimized )
 velfx=[]
 velfy=[]
+# velocity command from MPC dynamic output
 velcx=[]
 velcy=[]
+# log velocity command from the VPM velocity field
+uVPM = []
+vVPM = []
+
+# updated velocity field plot
+nGridX = 25  # 20                                                         # X-grid for streamlines and contours
+nGridY = 25  # 20                                                       # Y-grid for streamlines and contours
+x_field = np.zeros((nGridX, nGridY))# np.zeros((30, 30))
+y_field = np.zeros((nGridX, nGridY)) # np.zeros((30, 30))
+u_field = np.zeros((nGridX, nGridY))
+v_field = np.zeros((nGridX, nGridY))
+lidar_x = []
+lidar_y = []
+
+# log the invarient sets
+psi_0 = []
+psi_1 = []
+
 U_infx = []
 V_infy=[]
 evx=[]
@@ -82,48 +114,100 @@ Uz = []
 Z = []
 VZ = []
 
-class fcuModes:
-
-	def __init__(self):
-		pass
-
-	def setArm(self):
-		rospy.wait_for_service('mavros/cmd/arming')
-		try:
-			armService = rospy.ServiceProxy('mavros/cmd/arming', mavros_msgs.srv.CommandBool)
-			armService(True)
-		except rospy.ServiceException as e:
-			print ("Service arming call failed: %s")
-
-	def setOffboardMode(self):
-		rospy.wait_for_service('mavros/set_mode')
-		try:
-			flightModeService = rospy.ServiceProxy('mavros/set_mode', mavros_msgs.srv.SetMode)
-			flightModeService(custom_mode='OFFBOARD')
-		except rospy.ServiceException as e:
-			print ("service set_mode call failed: %s. Offboard Mode could not be set.")
-
 class clover:
 
-	def __init__(self, FLIGHT_ALTITUDE = 0.8, RATE = 50, RADIUS = 3.5, V_des = 0.6, N_horizon=10, T_horizon=1.0, REF_FRAME = 'map'): # rate = 50hz radius = 5m cycle_s = 25
-        # If you change prediction horizon intervals or time, need to hardcode changes in set_object_state
+	def __init__(self, FLIGHT_ALTITUDE = 0.7, RATE = 50, RADIUS = 3.5, V_des = 0.6, N_horizon=15, T_horizon=3.0, REF_FRAME = 'map'): # rate = 50hz radius = 5m cycle_s = 25
+
+		# Define the sink location and strength
+		self.g_sink = 2.00
+		self.xsi = 20 # 20
+		self.ysi = 20 # 20
+
+		# Define the source strength and location
+		self.g_source = 0.8
+		self.xs = -0.1
+		self.ys = -0.1
+		# self.xs = 5
+		# self.ys = 2.5
+
+
+		# Define the source strength placed on the actual drone
+		self.g_clover = 0.0
+
+		# Could possible just put a source on the drone and not bother with the two different sources
+
+
+		# Free flow constant
+		self.U_inf = 0
+		self.V_inf = 0
+
+		self.alpha = 70*(math.pi/180)
+
+	# iNITIALIZE INPUT VELOCITY VALUES
+		self.u = 0
+		self.v = 0
+
+		# Define the max velocity allowed for the Clover
+		self.vel_max = 0.65 # [m/s] 0.65
+
+		# #-------------------- Offline Panel Calculations---------------------------------------------------
+
+		# An object was not detected yet, so use the source and sink for velocity based navigation
+
+		## Compute Streamlines with stream function velocity equation
+		# Too many gridpoints is not good, it will cause the control loop to run too slow
+		# Grid parameters
+		self.nGridX = 25;  # 20 is good                                                         # X-grid for streamlines and contours
+		self.nGridY = 25;  # 20 is good                                                    # Y-grid for streamlines and contours
+		self.xVals  = [-1, 21];  # ensured it is extended past the domain incase the clover leaves domain             # X-grid extents [min, max]
+		self.yVals  = [-1, 21];  #-0.3;0.3                                                 # Y-grid extents [min, max]
+
+		# Define Lidar range (we will set parameters to update grid resolution within detection range):
+		self.lidar_range = 3.5 # [m]
+
+		
+		# Create an array of starting points for the streamlines
+		x_range = np.linspace(0, 10, int((10-0)/0.5) + 1)
+		y_range = np.linspace(0, 10, int((10-0)/0.5) + 1)
+
+		x_1 = np.zeros(len(y_range))
+		y_1 = np.zeros(len(x_range))
+		Xsl = np.concatenate((x_1, x_range))
+		Ysl = np.concatenate((np.flip(y_range), y_1))
+		XYsl = np.vstack((Xsl,Ysl)).T
+
+		# Generate the grid points
+		Xgrid = np.linspace(self.xVals[0], self.xVals[1], self.nGridX)
+		Ygrid = np.linspace(self.yVals[0], self.yVals[1], self.nGridY)
+		self.XX, self.YY = np.meshgrid(Xgrid, Ygrid)
+
+		self.Vxe = np.zeros((self.nGridX, self.nGridY))
+		self.Vye = np.zeros((self.nGridX, self.nGridY))
+
+		# Get the current state/position of th clover for its source
+		telem = get_telemetry(frame_id='map')
+
+
+		for m in range(self.nGridX):
+			for n in range(self.nGridY):
+				XP, YP = self.XX[m, n], self.YY[m, n]
+				u, v = CLOVER_noOBSTACLE(XP, YP, self.U_inf, self.V_inf, self.xs, self.ys, self.xsi, self.ysi, self.g_source, self.g_sink, self.g_clover, telem.x, telem.y)
+
+				self.Vxe[m, n] = u
+				self.Vye[m, n] = v
+
+		# Flatten the grid point matices and velocity matrices into vector arrays for the griddata function
+		self.XX_f = self.XX.flatten()
+		self.YY_f = self.YY.flatten()
+		self.Vxe_f = self.Vxe.flatten()
+		self.Vye_f = self.Vye.flatten()
+
+		
  		
  		# Publisher which will publish to the topic '/mavros/setpoint_velocity/cmd_vel'.
 		self.velocity_publisher = rospy.Publisher('/mavros/setpoint_velocity/cmd_vel',TwistStamped, queue_size=10)
 
-		self.xVals  = [0, 10];  # X-grid extents [min, max]
-		self.yVals  = [0, 10];  # Y-grid extents [min, max]
-
-		distance = math.sqrt((self.xVals[1]-self.xVals[0])**2 + (self.yVals[1]-self.yVals[0])**2)
-
-		 # global static variables
-		self.FLIGHT_ALTITUDE = FLIGHT_ALTITUDE          # fgdf
-		self.RATE            = RATE                     # loop rate hz
-		self.FRAME           = REF_FRAME                # Reference frame for complex trajectory tracking
-		self.CYCLE_S         = 15 #distance / self.V_des     # time to complete linear trajectory in seconds
-		self.V_des           = distance / self.CYCLE_S #V_des
-		self.STEPS           = int( self.CYCLE_S * self.RATE ) # Total number of steps in the trajectory
-		
+		#-------MPC formulation----------------------------------------
 		# MPC variables
 		self.N_horizon = N_horizon # Define prediction horizone in terms of optimization intervals
 		self.T_horizon = T_horizon # Define the prediction horizon in terms of time (s) --> Limits time and improves efficiency
@@ -131,53 +215,73 @@ class clover:
 		# self.CYCLE_S/self.STEPS = dt
 
 		# Compute the prediction horizon length in terms of steps in the reference trajectory
-		self.N_steps = int(self.T_horizon*self.RATE)
-		self.dt_ref = int(self.N_steps/self.N_horizon) # This is the amount of steps ahead within the reference trajectory array, per iteration in the prediction horizon
+		# self.N_steps = int(self.T_horizon*self.RATE)
+		# self.dt_ref = int(self.N_steps/self.N_horizon) # This is the amount of steps ahead within the reference trajectory array, per iteration in the prediction horizon
+
+		# load model
+		self.acados_solver, acados_integrator, model = acados_settings(self.N_horizon, self.T_horizon)
+		# dimensions
+		self.nx = model.x.size()[0]
+		self.nu = model.u.size()[0]
+		ny = self.nx + self.nu
+
+		#---------------------------------------------------------------------------------------------------
+		
+		
+		 # global static variables
+		self.FLIGHT_ALTITUDE = FLIGHT_ALTITUDE          # fgdf
+		# self.RATE            = RATE                     # loop rate hz
+		self.RATE            =  self.N_horizon/self.T_horizon # i think this makes sense, because dt = self.T_horizon/self.N_horizon
+		self.FRAME           = REF_FRAME                # Reference frame for complex trajectory tracking
+		self.CYCLE_S         = 15 #distance / self.V_des     # time to complete linear trajectory in seconds
+		self.STEPS           = int( self.CYCLE_S * self.RATE ) # Total number of steps in the trajectory
+
+		self.last_timestamp = None # make sure there is a timestamp
+		
 
 		i    = 0
-		dt   = 1.0/self.RATE
+		dt   = 1.0/self.RATE # = dt = self.T_horizon/self.N_horizon
 
-		# create random time array
-		t = np.arange(0,self.STEPS,1)
+		# # create random time array
+		# t = np.arange(0,self.STEPS,1)
 
-		# Calculate the x and y velocity components (inertial of course)
-		angle_degrees = 45     # Angle measured counterclockwise from the positive x-axis
-		angle_radians = np.deg2rad(angle_degrees)
+		# # Calculate the x and y velocity components (inertial of course)
+		# angle_degrees = 45     # Angle measured counterclockwise from the positive x-axis
+		# angle_radians = np.deg2rad(angle_degrees)
 
-		# Calculate x and y components of the desired velocity
-		self.velocity_x = self.V_des * np.cos(angle_radians)
-		self.velocity_y = self.V_des * np.sin(angle_radians)
+		# # Calculate x and y components of the desired velocity
+		# self.velocity_x = self.V_des * np.cos(angle_radians)
+		# self.velocity_y = self.V_des * np.sin(angle_radians)
 
 		
-		self.posx = np.linspace(self.xVals[0], self.xVals[1], len(t))
-		self.posy = np.linspace(self.yVals[0], self.yVals[1], len(t))
-		self.posz = np.ones(len(t)) * self.FLIGHT_ALTITUDE
-		self.velx = np.ones(len(t)) * self.velocity_x
-		self.vely = np.ones(len(t)) * self.velocity_y
-		self.velz = np.zeros(len(t))
-		self.afx = np.zeros(len(t))
-		self.afy = np.zeros(len(t))
-		self.afz = np.zeros(len(t))
-		# Calculate yaw as direction of velocity
-		self.yawc = np.arctan2(self.vely, self.velx)
-		self.yaw_ratec = [1]*len(t)
-		# calculate yaw_rate by dirty differentiating yaw
-		for i in range(0, self.STEPS):
-			next = self.yawc[(i+1)%self.STEPS] # 401%400 = 1 --> used for this reason (when it goes over place 400 or whatever STEPS is)
-			curr = self.yawc[i]
-      			# account for wrap around +- PI
-			if((next-curr) < -math.pi):
-				next = next + math.pi*2
-			if((next-curr) >  math.pi):
-				next = next - math.pi*2
-			self.yaw_ratec[i] = (next-curr)/dt
+		# self.posx = np.linspace(self.xVals[0], self.xVals[1], len(t))
+		# self.posy = np.linspace(self.yVals[0], self.yVals[1], len(t))
+		# self.posz = np.ones(len(t)) * self.FLIGHT_ALTITUDE
+		# self.velx = np.ones(len(t)) * self.velocity_x
+		# self.vely = np.ones(len(t)) * self.velocity_y
+		# self.velz = np.zeros(len(t))
+		# self.afx = np.zeros(len(t))
+		# self.afy = np.zeros(len(t))
+		# self.afz = np.zeros(len(t))
+		# # Calculate yaw as direction of velocity
+		# self.yawc = np.arctan2(self.vely, self.velx)
+		# self.yaw_ratec = [1]*len(t)
+		# # calculate yaw_rate by dirty differentiating yaw
+		# for i in range(0, self.STEPS):
+		# 	next = self.yawc[(i+1)%self.STEPS] # 401%400 = 1 --> used for this reason (when it goes over place 400 or whatever STEPS is)
+		# 	curr = self.yawc[i]
+      	# 		# account for wrap around +- PI
+		# 	if((next-curr) < -math.pi):
+		# 		next = next + math.pi*2
+		# 	if((next-curr) >  math.pi):
+		# 		next = next - math.pi*2
+		# 	self.yaw_ratec[i] = (next-curr)/dt
 
 		#--------------Obstacle parameters-----------------------------
-		self.SF = 0.3 # safety factor distance from the obstcle (set as the width of the Clover)
+		self.SF = 0.5 # safety factor distance from the obstcle (set as the width of the Clover)
 
 
 		#--------------------------------------------------------------
-		
 		
 		
 		# Publisher which will publish to the topic '/mavros/setpoint_raw/local'.
@@ -188,6 +292,9 @@ class clover:
 
 		# Subscribe directly to the ground truth
 		self.ground_truth = rospy.Subscriber('gazebo/link_states', LinkStates, self.link_states_callback)
+
+		 # Use the data coming in through this subscription, subscribing is faster than service, and we are using ground_truth from gazebo for better pose estimations:
+		self.pose_call = rospy.Subscriber('/mavros/local_position/velocity_local',TwistStamped, self.controller)
 
 		# Generate the array of lidar angles
 		self.lidar_angles = np.linspace(-180*(math.pi/180), 180*(math.pi/180), 360) # Adjust this number based on number defined in XACRO!!!!!
@@ -201,8 +308,11 @@ class clover:
 		# Set a flag, that will be used as a logic operator to adjust how the HOCBF is set, which depends on whether an obstacle is detected or not
 		self.object_detect = False
 
+		 #-----Define velocity field plot logging variables--------------
+		self.count = True
+
 		self.current_state = State()
-		self.rate = rospy.Rate(20)
+		self.rate = rospy.Rate(20) # 20
 
 	def updateState(self, msg):
 		self.current_state = msg
@@ -238,7 +348,7 @@ class clover:
 		# Ensure there are actually lidar readings, no point in doing calculations if
 		# nothing is detected:
 		# Need to add a lidar detection threshold for ellipsoid estimation, so if we have like 1-2 or low detection we could get bad results
-		if sum(not np.isinf(range_val) for range_val in self.obs_detect) >= 4 and z_clover >= 0.9: # want the drone to be at some altitude so we are not registering ground detections
+		if sum(not np.isinf(range_val) for range_val in self.obs_detect) >= 4 and z_clover >= 0.65: # want the drone to be at some altitude so we are not registering ground detections
 
 
 			# The angles and ranges start at -180 degrees i.e. at the right side, then go counter clockwise up to the top i.e. 180 degrees
@@ -301,27 +411,113 @@ class clover:
 
 
 			self.object_detect = True # Update object detected flag
+
+			# now that the obstacle is within the lidar range, we can start calculating psi_0 and psi_1 for logging
+			# i.e. we now have an estimation on the obstacles location
+
+			# Calculate delta_p, delta_v, and delta_a
+			telem = get_telemetry(frame_id='map')
+			delta_p = np.array([self.clover_pose.position.x-self.xc, self.clover_pose.position.y-self.yc])
+			delta_v = np.array([telem.vx-0, telem.vy-0]) # static obstacle assumption for now
+
+			# Calculate norms
+			norm_delta_p = np.linalg.norm(delta_p, ord=2)  # Euclidean norm
+			norm_delta_v = np.linalg.norm(delta_v, ord=2)  # Euclidean norm
+
+			# constants
+			q1 = 12#15
+			q2 = 9#10
+			r = self.SF + max(self.a_fit, self.b_fit)
+
+			self.psi_0 = norm_delta_p - r
+			self.psi_1 = (np.dot(delta_p, delta_v)) / norm_delta_p + q1*(self.psi_0)
+
+			psi_0.append(self.psi_0)
+			psi_1.append(self.psi_1)
+
+			# Log the fist velocity field update reading
+			if self.count: 
+				x_field[:,:] = self.XX # Assign XX to x_field, assuming XX and x_field have the same shape
+				y_field[:,:] = self.YY
+				u_field[:,:] = self.Vxe
+				v_field[:,:] = self.Vye
+				lidar_x.append(self.xa)
+				lidar_y.append(self.ya)
+				xc.append(self.xc)
+				yc.append(self.yc)
+				a_fit.append(self.a_fit)
+				b_fit.append(self.b_fit)
+				theta.append(self.theta)
+
+				# update the flag variable (turn off so we only log the first update/obstacle reading)
+				self.count = False
+
 		else:
 			self.object_detect = False # Update object detected flag
+
+	def controller(self,data):
+
+		current_timestamp = data.header.stamp.to_sec()
+
+		if self.last_timestamp is not None:
+
+
+			# Get current state of this follower 
+			# telem = get_telemetry(frame_id='map')
+			x_clover = self.clover_pose.position.x
+			y_clover = self.clover_pose.position.y
+			z_clover = self.clover_pose.position.z
+			quaternion = [self.clover_pose.orientation.w,self.clover_pose.orientation.x, self.clover_pose.orientation.y, self.clover_pose.orientation.z ]
+			euler_angles = euler_from_quaternion(quaternion)
+			roll = euler_angles[2] #+ math.pi
+			yaw = -euler_angles[0]+math.pi 
+			pitch = euler_angles[1]
+
+
+
+			# #-------------------- Offline Panel Calculations---------------------------------------------------
+
+
+
+			# Complete contributions from pre-computed grid distribution
+			u = griddata((self.XX_f, self.YY_f),self.Vxe_f,(x_clover,y_clover),method='linear') #+ self.u_inf #+ u_source #+ u_inf
+			v = griddata((self.XX_f, self.YY_f),self.Vye_f,(x_clover,y_clover),method='linear') #+self.v_inf#+ v_source #+self.v_inf #+ v_source #+ v_inf
+
+
+
+			# # Complete contributions from pre-computed grid distribution
+			# self.u = u
+			# self.v = v
+
+			# normalize velocities
+			vec = np.array([[u],[v]],dtype=float) 
+			magnitude = math.sqrt(u**2 + v**2)
+
+			if magnitude > 0:
+				norm_vel = (vec/magnitude)*self.vel_max
+			else:
+				norm_vel = np.zeros_like(vec)
+
+			self.u = norm_vel[0,0]
+			self.v = norm_vel[1,0]
+			#print(self.u)
+			# determine the yaw
+			self.omega = math.atan2(self.v,self.u)
+
+
+		# Update last_timestamp for the next callback
+		self.last_timestamp = current_timestamp
 
                
 
 	def main(self):#,x=0, y=0, z=2, yaw = float('nan'), speed=1, frame_id ='',auto_arm = True,tolerance = 0.2):
-		
-		
-		 # load model
-		acados_solver, acados_integrator, model = acados_settings(self.N_horizon, self.T_horizon)
-		# dimensions
-		nx = model.x.size()[0]
-		nu = model.u.size()[0]
-		ny = nx + nu
 		
 
 		# Wait for 3 seconds
 		rospy.sleep(3)
 		
 		# Takeoff with Clovers navigate function
-		navigate(x=0, y=0, z=self.FLIGHT_ALTITUDE, yaw=float('nan'), speed=0.5, frame_id = 'map', auto_arm = True)
+		navigate(x=0.5, y=0.5, z=self.FLIGHT_ALTITUDE, yaw=float('nan'), speed=0.5, frame_id = 'map', auto_arm = True)
 		
 		# Give the Clover time to reach the takeoff altitude
 		rospy.sleep(15)
@@ -344,8 +540,8 @@ class clover:
 		pitch = euler_angles[1]
 
 		x0 = np.array([x_clover, telem.vx, y_clover, telem.vy, z_clover, telem.vz])
-		acados_solver.set(0, "lbx", x0) # Update the zero shooting node position
-		acados_solver.set(0, "ubx", x0) # update the zero shooting node control input
+		self.acados_solver.set(0, "lbx", x0) # Update the zero shooting node position
+		self.acados_solver.set(0, "ubx", x0) # update the zero shooting node control input
 
 		release() # stop navigate service from publishing
 
@@ -356,11 +552,14 @@ class clover:
 			
 			target.coordinate_frame = 1 #MAV_FRAME_LOCAL_NED  # =1
 			
-			target.type_mask = 1+2+4+8+16+32+2048 # Use everything! 1024-> forget yaw
+			target.type_mask = 64+128+256+2048 # Use everything! 1024-> forget yaw
 			#target.type_mask =  3576 # Use only position #POSITION_TARGET_TYPEMASK_VX_IGNORE | POSITION_TARGET_TYPEMASK_VY_IGNORE | POSITION_TARGET_TYPEMASK_VZ_IGNORE | POSITION_TARGET_TYPEMASK_AX_IGNORE | POSITION_TARGET_TYPEMASK_AY_IGNORE |POSITION_TARGET_TYPEMASK_AZ_IGNORE | POSITION_TARGET_TYPEMASK_FORCE_IGNORE | POSITION_TARGET_TYPEMASK_YAW_IGNORE | POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE # = 3576
 			#target.type_mask =  3520 # Use position and velocity
 			#target.type_mask =  3072 # Use position, velocity, and acceleration
 			#target.type_mask =  2048 # Use position, velocity, acceleration, and yaw
+			# uint16 IGNORE_VX = 8 # Velocity vector ignore flags
+			# uint16 IGNORE_VY = 16
+			# uint16 IGNORE_VZ = 32
 
 			# obj = object_loc(frame_id = 'map')
 			# test2 = np.array([obj.x[0],0,0.0,obj.y[self.N_horizon],0,0.0])
@@ -374,82 +573,70 @@ class clover:
 			
 			# update reference
 			for j in range(self.N_horizon): # Up to N-1
-				# index = k + j
-				index = k + self.dt_ref # Taking into account the amount of time per prediction horizon interval relative to the sampling rate of the reference trajectory
-				# Check if index is within the bounds of the arrays
-				if index < len(self.posx):
-					yref = np.array([self.posx[index], self.velx[index], self.posy[index], self.vely[index], self.posz[index], self.velz[index], 0, 0, 0])
-					# yref = np.array([20.0, self.velx[index], 20.0, self.vely[index], self.FLIGHT_ALTITUDE, 0, 0, 0, 0])
-				else:
-					# If index exceeds the length of the arrays, use the last elements
-					yref = np.array([self.posx[-1], self.velx[-1], self.posy[-1], self.vely[-1], self.posz[-1], self.velz[-1], 0, 0, 0])
-					# yref = np.array([20, self.velx[-1], 20, self.vely[-1], self.FLIGHT_ALTITUDE, 0, 0, 0, 0])
-    
-				acados_solver.set(j, "yref", yref)
+								
+				# yref = np.array([self.xsi, self.u, self.ysi, self.v, self.FLIGHT_ALTITUDE, 0, 0, 0, 0])
+				yref = np.array([0, self.u, 0, self.v, self.FLIGHT_ALTITUDE, 0, 0, 0, 0])
+				
+				self.acados_solver.set(j, "yref", yref)
 
 				if not self.object_detect:
+					# an obstacle was not detected, so set the
+					# constraint condition to a trivial case
 
 					# Set the distance from the obstacle
-					r = 1.0
+					r = 2.7
 				
-					acados_solver.set(j, "p", np.array([4,0,0,4,0,0, r])) # Assuming a static obstacle
+					# self.acados_solver.set(j, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
+					self.acados_solver.set(j, "p", np.array([7,0,0,7,0,0, r])) # Assuming a static obstacle
 				else:
+					# An obstacle was detected, therefore apply the constraints (assuming a static obstacle for now)
 					# Set the distance from the obstacle
-					r = self.SF + max(self.a_fit, self.b_fit)
+					r = 2.7#self.SF + max(self.a_fit, self.b_fit)
 
-					acados_solver.set(j, "p", np.array([self.xc,0,0,self.yc,0,0,r])) # Assuming a static obstacle
+					# self.acados_solver.set(j, "p", np.array([self.xc,0,0,self.yc,0,0,r])) # Assuming a static obstacle
+					self.acados_solver.set(j, "p", np.array([7,0,0,7,0,0, r])) # Assuming a static obstacle
 					
-					# acados_solver.set(j, "p", np.array([2.5,0,0,2.5,0,0])) # State = [x, vx, ax, y, vy, ay]
-					# acados_solver.set(j, "p", np.array([5.5678987695432+j*0.00003458792871,0.2,0,obj.y[j],0.2,0])) # Works
-					# acados_solver.set(j, "p", np.array([obj.x[j],obj.vx[j],obj.ax[j],obj.y[j],obj.vy[j],obj.ay[j]]))
-					# test = np.array([5.5678987695432+j*0.00003458792871,0.2,0,5.67865,0.2,0])
-					# print(type(test))
-					# print(test.dtype)
-					# acados_solver.set(self.N_horizon, "p", np.array([obj.x[j],0,0.0,obj.y[j],0,0.0])) # State = [x, vx, ax, y, vy, ay]
-
-			# index2 = k + self.N_horizon
-			index2 = k + self.N_steps # This considers the amount of steps in the reference trajectory, considering time of prediction horizon and rate of reference trajectory
-			if index2 < len(self.posx):
-
-				yref_N = np.array([self.posx[index2],self.velx[index2],self.posy[index2],self.vely[index2],self.posz[index2],self.velz[index2]]) # terminal components
-				# yref_N = np.array([20,self.velx[k+self.N_horizon],20,self.vely[k+self.N_horizon],self.FLIGHT_ALTITUDE,0]) # terminal components
-			else:
-				yref_N = np.array([self.posx[-1], self.velx[-1], self.posy[-1], self.vely[-1], self.posz[-1], self.velz[-1]])
-				# yref_N = np.array([20, self.velx[-1], 20, self.vely[-1], self.FLIGHT_ALTITUDE, 0])
-
-			acados_solver.set(self.N_horizon, "yref", yref_N)
+			# Set the terminal reference state
+			yref_N = np.array([0,self.u,0,self.v,self.FLIGHT_ALTITUDE,0]) # terminal components
+			
+			self.acados_solver.set(self.N_horizon, "yref", yref_N)
 			if not self.object_detect:
-
+				# an obstacle was not detected, so set the
+				# constraint condition to a trivial case
 				# Set the distance from the obstacle
-				r = 0
-				acados_solver.set(self.N_horizon, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
+				r = 2.7
+				# self.acados_solver.set(self.N_horizon, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
+				self.acados_solver.set(self.N_horizon, "p", np.array([7,0,0,7,0,0, r])) # Assuming a static obstacle
 			else:
+				# An obstacle was detected, therefore apply the constraints (assuming a static obstacle for now)
 				# Set the distance from the obstacle
-				r = self.SF + max(self.a_fit, self.b_fit)
+				r = 2.7#self.SF + max(self.a_fit, self.b_fit)
 
 				# Assuming a static obstacle
-				acados_solver.set(self.N_horizon, "p", np.array([self.xc,0,0,self.yc,0,0,r])) # State = [x, vx, ax, y, vy, ay]
-				# acados_solver.set(self.N_horizon, "p", np.array([2.5,0,0,2.5,0,0])) # State = [x, vx, ax, y, vy, ay]
-				# acados_solver.set(j, "p", np.array([5.6,0.2,0,5.6,0.2,0]))
-				#acados_solver.set(self.N_horizon, "p", np.array([obj.x[self.N_horizon-1],obj.vx[self.N_horizon-1],obj.ax[self.N_horizon-1],obj.y[self.N_horizon-1],obj.vy[self.N_horizon-1],obj.ay[self.N_horizon-1]])) # State = [x, vx, ax, y, vy, ay]
-				# acados_solver.set(self.N_horizon, "p", np.array([obj.x[-1],obj.vx[-1],obj.ax[-1],obj.y[-1],obj.vy[-1],obj.ay[-1]])) # State = [x, vx, ax, y, vy, ay]
-
+				# self.acados_solver.set(self.N_horizon, "p", np.array([self.xc,0,0,self.yc,0,0,r])) # State = [x, vx, ax, y, vy, ay]
+				self.acados_solver.set(self.N_horizon, "p", np.array([7,0,0,7,0,0, r])) # Assuming a static obstacle
+				
 			# Solve ocp
-			status = acados_solver.solve()
+			status = self.acados_solver.solve()
 
 			# get solution
-			x0 = acados_solver.get(0, "x")
-			u0 = acados_solver.get(0, "u")
+			x0 = self.acados_solver.get(0, "x")
+			u0 = self.acados_solver.get(0, "u")
+
+			# update initial condition
+			x1 = self.acados_solver.get(1, "x")
+	
 
 			# Gather position for publishing
-			# target.position.x = posx[k] +0.15
-			# target.position.y = posy[k]
-			# target.position.z = posz[k]
+			target.position.x = x0[0]
+			target.position.y = x0[2]
+			target.position.z = self.FLIGHT_ALTITUDE
 			
 			# Gather velocity for publishing
-			# target.velocity.x = velx[k]
-			# target.velocity.y = vely[k]
-			# target.velocity.z = velz[k]
+			# Gather velocity for publishing
+			target.velocity.x = x0[1]
+			target.velocity.y = x0[3]
+			target.velocity.z = 0
 			
 			# Gather acceleration for publishing
 			# target.acceleration_or_force.x = afx[k]
@@ -464,7 +651,8 @@ class clover:
 			# Might not want to consider yaw and yawrate as it will intefere with MPC and its constraints
 			# Gather yaw for publishing
 			# target.yaw = self.yawc[k]
-			target.yaw = np.arctan2(self.vely[-1], self.velx[-1])
+			self.omega = math.atan2(x0[3],x0[1])
+			target.yaw = self.omega
 			
 			# Gather yaw rate for publishing
 			# target.yaw_rate = self.yaw_ratec[k]
@@ -472,8 +660,7 @@ class clover:
 			
 			self.publisher.publish(target)
 
-			# update initial condition
-			#x0 = acados_solver.get(1, "x")
+			
 			# update initial condition (current pose of MPC problem)
 			telem = get_telemetry(frame_id = 'map')
 			x_clover = self.clover_pose.position.x
@@ -483,28 +670,37 @@ class clover:
 			euler_angles = euler_from_quaternion(quaternion)
 			roll = euler_angles[2] #+ math.pi
 			yaw = -euler_angles[0]+math.pi 
-			x0 = np.array([x_clover, telem.vx, y_clover, telem.vy, z_clover, telem.vz])
-			acados_solver.set(0, "lbx", x0) # Update the zero shooting node position
-			acados_solver.set(0, "ubx", x0)
+			# x_new = np.array([x_clover, x1[1], y_clover, x1[3], z_clover, x1[5]])
+			x_new = np.array([x1[0], telem.vx, x1[2], telem.vy, x1[4], telem.vz])
+			# self.acados_solver.set(0, "lbx", x_new) # Update the zero shooting node position
+			# self.acados_solver.set(0, "ubx", x_new)
+			self.acados_solver.set(0, "lbx", x1) # Update the zero shooting node position
+			self.acados_solver.set(0, "ubx", x1)
+
 
 			# logging/debugging
 			xf.append(x_clover)
 			yf.append(y_clover)
-			# xcom.append(self.posx[k])
-			# ycom.append(self.posy[k])
+			xcom.append(x0[0])
+			ycom.append(x0[2])
 			# evx.append(self.u-x_clover)
 			# evy.append(self.v-telem.vy)
-			# eyaw.append(self.omega-yaw)
-			# YawC.append(self.yawc[k]*(180/math.pi))
-			# YawF.append(yaw*(180/math.pi))
+			eyaw.append(self.omega-yaw)
+			YawC.append(self.omega*(180/math.pi))
+			YawF.append(yaw*(180/math.pi))
 			#xdispf.append(self.d_xi)
 			#ydispf.append(self.d_yi)
 			velfx.append(telem.vx)
 			velfy.append(telem.vy)
-			velcx.append(self.velocity_x)
-			velcy.append(self.velocity_y)
+			velcx.append(x0[1])
+			velcy.append(x0[3])
+			uVPM.append(self.u)
+			vVPM.append(self.v)
 			# U_infx.append(self.U_inf)
 			# V_infy.append(self.V_inf)
+			Ux.append(u0[0])
+			Uy.append(u0[1])
+			Uz.append(u0[2])
 			
 		
 			#set_position(x=posx[k], y=posy[k], z=posz[k],frame_id='aruco_map')
@@ -519,12 +715,12 @@ class clover:
 			# 	navigate(x=0, y=0, z=self.FLIGHT_ALTITUDE, yaw=float('nan'), speed=0.5, frame_id = 'map')
 			# 	rospy.sleep(5)
 			# 	break
-			if math.sqrt((x_clover-(self.xVals[1]-1)) ** 2 + (y_clover-(self.yVals[1]-1)) ** 2) < 0.6: # 0.4
+			if math.sqrt((x_clover-self.xsi) ** 2 + (y_clover-self.ysi) ** 2) < 0.6: # 0.4
 				set_position(frame_id='body')
 				# navigate(x=x_clover,y=y_clover,z=self.FLIGHT_ALTITUDE, yaw=float('nan'), speed=0.2, frame_id = self.FRAME)
 				
 				break
-			print('yo')
+			
 			rr.sleep()
 			
 
@@ -534,14 +730,50 @@ class clover:
 		
 		land()
 		 
-	# If we press control + C, the node will stop.
-		rospy.sleep(6)
+	
+		
+
+if __name__ == '__main__':
+	try:
+		q=clover()
+		
+		q.main()#x=0,y=0,z=1,frame_id='aruco_map')
+
+	# Define some preliminary plot limits for streamplot
+		xVals  = [-1, 21];  # -0.5; 1.5                                                  # X-grid extents [min, max]
+		yVals  = [-1, 21];  #-0.3;0.3                                                 # Y-grid extents [min, max]
+		# Create an array of starting points for the streamlines
+		# x_range = np.linspace(0, 20, int((20-0)/0.75) + 1)
+		# y_range = np.linspace(0, 20, int((20-0)/0.75) + 1)
+		# x_1 = np.zeros(len(y_range))
+		# y_1 = np.zeros(len(x_range))
+
+		x_range = np.linspace(2, 8, int((8-2)/0.5) + 1)
+		y_range = np.linspace(2, 8, int((8-2)/0.5) + 1)
+		x_1 = np.ones(len(y_range))*2
+		y_1 = np.ones(len(x_range))*2
+		# Convert list fields to arrays
+		# x_field = np.array(x_field).reshape(2,2)
+		# y_field = np.array(y_field).reshape(2,2)
+		# u_field = np.array(u_field).reshape(2,2)
+		# v_field = np.array(v_field).reshape(2,2)
+
+		
+		Xsl = np.concatenate((x_1, x_range))
+		Ysl = np.concatenate((np.flip(y_range), y_1))
+		XYsl = np.vstack((Xsl,Ysl)).T
+
+
 		# debug section
 		# Plot logged data for analyses and debugging
 		plt.figure(1)
 		plt.subplot(211)
-		plt.plot(xf,yf,'r',label='x-fol')
-		plt.plot(self.posx,self.posy,'b--',label='x-com')
+		plt.plot(xf,yf,'r',label='pos-clover')
+		plt.plot(xcom,ycom,'b',label='MPC-com')
+		ellipse = Ellipse(xy=(xc[0],yc[0]), width=2*a_fit[0], height=2*b_fit[0], angle=np.rad2deg(theta[0]),
+		edgecolor='b', fc='None', lw=2)
+		plt.gca().add_patch(ellipse)
+		# plt.plot(self.posx,self.posy,'b--',label='x-com')
 		# plt.fill(xa[0],ya[0],'k') # plot first reading
 		plt.legend()
 		plt.grid(True)
@@ -563,14 +795,16 @@ class clover:
 		plt.figure(2)
 		plt.subplot(211)
 		plt.plot(velfx,'r',label='vx-vel')
-		plt.plot(velcx,'b',label='vx-com')
+		plt.plot(velcx,'b',label='vx-MPC-com')
+		plt.plot(uVPM,'g',label='vx-VPM')
 		plt.ylabel('vel[m/s]')
 		plt.xlabel('Time [s]')
 		plt.legend()
 		plt.grid(True)
 		plt.subplot(212)
 		plt.plot(velfy,'r',label='vy-vel')
-		plt.plot(velcy,'b--',label='vy-com')
+		plt.plot(velcy,'b--',label='vy-MPC-com')
+		plt.plot(vVPM,'g',label='vy-VPM')
 		plt.legend()
 		plt.grid(True)
 		plt.ylabel('Position [m]')
@@ -583,35 +817,52 @@ class clover:
 		# plt.legend()
 		plt.grid(True)
 
-		# plt.figure(4)
-		# plt.subplot(311)
-		# plt.plot(t, Ux,'r')
-		# plt.legend()
-		# plt.grid(True)
-		# plt.ylabel('Ux')
-		# plt.subplot(312)
-		# plt.plot(t, Uy,'b')
-		# plt.legend()
-		# plt.grid(True)
-		# plt.ylabel('Uy')
-		# plt.subplot(313)
-		# plt.plot(t, Uz,'r')
-		# plt.legend()
-		# plt.grid(True)
-		# plt.ylabel('T_input')
-		# plt.xlabel('Time [s]')
-		plt.show()
+		plt.figure(3)
+		plt.subplot(311)
+		plt.plot(Ux,'r')
+		plt.legend()
+		plt.grid(True)
+		plt.ylabel('Ux')
+		plt.subplot(312)
+		plt.plot(Uy,'b')
+		plt.legend()
+		plt.grid(True)
+		plt.ylabel('Uy')
+		plt.subplot(313)
+		plt.plot(Uz,'r')
+		plt.legend()
+		plt.grid(True)
+		plt.ylabel('T_input')
+		plt.xlabel('Time [s]')
 		
-		
-		rospy.spin()
 
-if __name__ == '__main__':
-	try:
-		# Desired velocity of the Clover:
-		v_des = 0.6 # m/s
-		q=clover()
-		
-		q.main()#x=0,y=0,z=1,frame_id='aruco_map')
+		fig = plt.figure(4)
+		plt.cla()
+		np.seterr(under="ignore")
+		plt.streamplot(x_field,y_field,u_field,v_field,linewidth=1.0,density=40,color='r',arrowstyle='-',start_points=XYsl) # density = 40
+		plt.grid(True)
+		#plt.plot(XX,YY,marker='o',color='blue')
+		plt.axis('equal')
+		plt.xlim(xVals)
+		plt.ylim(yVals)
+		plt.plot(lidar_x, lidar_y,'-o' ,color = 'k',linewidth = 0.25)
+		plt.plot(xf,yf,'b',label='x-fol') # path taken by clover
+		ellipse = Ellipse(xy=(xc[0],yc[0]), width=2*a_fit[0], height=2*b_fit[0], angle=np.rad2deg(theta[0]),
+		edgecolor='b', fc='None', lw=2)
+		plt.gca().add_patch(ellipse)
+		plt.xlabel('X Units')
+		plt.ylabel('Y Units')
+		plt.title('Streamlines with Stream Function Velocity Equations')
+
+		plt.figure(5)
+		plt.plot(psi_0,'r',label='psi_0')
+		plt.plot(psi_1,'b',label='psi_1')
+		plt.ylabel('b(x)')
+		plt.xlabel('Time [s]')
+		plt.legend()
+		plt.grid(True)
+
+		plt.show()
 		
 	except rospy.ROSInterruptException:
 		pass

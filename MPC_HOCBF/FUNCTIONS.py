@@ -1,6 +1,6 @@
 from CLOVER_MODEL import export_clover_model
 from acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver, AcadosSimSolver
-from casadi import vertcat, sum1, mtimes, Function, norm_1, norm_2
+from casadi import vertcat, sum1, mtimes, Function, norm_1, norm_2, dot
 import numpy as np
 import scipy.linalg
 
@@ -44,11 +44,12 @@ def acados_settings(N_horizon, T_horizon):
 		# Q = np.array([ 10, 0, 10, 0, 10, 0]) # Assuming there are only 3 state outputs, State = [x, vx, y, vy, z, vz]
 		# R = np.array([ 1e-4, 1e-4, 1e-4]) # Three control inputs acceleration
 		#Q = np.array([ 1000, 0, 1500, 0, 1500, 0]) # Assuming there are only 3 state outputs, State = [x, vx, y, vy, z, vz]
-		Q = np.array([ 60, 30, 60, 30, 50, 20]) # 50-80 80-100 in position 40-50 on velocity
-		R = np.array([ 8, 8, 5]) # 5 is good
+		Q = np.array([ 0, 100, 0, 100, 50, 30]) # 50-80 80-100 in position 40-50 on velocity
+		Q_e = np.array([ 0, 100, 0, 100, 50, 30])
+		R = np.array([ 5, 5, 5]) # 5 is good
 		
 
-		ocp.cost.W_e = np.diag(Q)  # inputs are not decision variables at the end of prediction horizon
+		ocp.cost.W_e = np.diag(Q_e)  # inputs are not decision variables at the end of prediction horizon
 		ocp.cost.W = np.diag(np.concatenate((Q,R))) # acados combines states and control input to yref for compactness
 
         # Set the cost (Custom cost function):
@@ -89,6 +90,7 @@ def acados_settings(N_horizon, T_horizon):
 		ocp.constraints.lbu = u_lb
 		ocp.constraints.ubu = u_ub
 		ocp.constraints.idxbu = np.array([0, 1, 2]) # Constraints apply to u[0],u[1],u[2]
+
         # Nonlinear inequality constraints using CBF
 		# gamma = 0.1
 		# x_obs = 2
@@ -124,20 +126,20 @@ def acados_settings(N_horizon, T_horizon):
 		r = model.p[6] # 1.2
 		# TODO Update obstacle states here
 		# State = x_obs, vx_obs, ax_obs, y_obs, vy_obs, ay_obs
-		q1 = 12#15
-		q2 = 9#10
-		delta_p = np.array([model.x[0]-model.p[0], model.x[2] - model.p[3]])
-		delta_v = np.array([model.x[1] - model.p[1], model.x[3] - model.p[4]])
-		delta_a = np.array([model.u[0]-model.p[2], model.u[1] - model.p[5]])
+		q1 = 15#15
+		q2 = 10#10
+		delta_p = vertcat(model.x[0]-model.p[0], model.x[2] - model.p[3])
+		delta_v = vertcat(model.x[1] - model.p[1], model.x[3] - model.p[4])
+		delta_a = vertcat(model.u[0]-model.p[2], model.u[1] - model.p[5])
 
 
 
 		norm_delta_p = norm_2(delta_p)#np.linalg.norm(delta_p, ord=1)
 		norm_delta_v = norm_2(delta_v)#np.linalg.norm(delta_v, ord=1)
 
-		c_ol = (norm_delta_v**2)/norm_delta_p - ((np.dot(delta_p,delta_v))**2)/(norm_delta_p**3) + (q1+q2)*(np.dot(delta_p,delta_v))/norm_delta_p + q1*q2*(norm_delta_p - r)
+		c_ol = (norm_delta_v**2)/norm_delta_p - ((dot(delta_p,delta_v))**2)/(norm_delta_p**3) + (q1+q2)*(dot(delta_p,delta_v))/norm_delta_p + q1*q2*(norm_delta_p - r)
 
-		ocp.model.con_h_expr = c_ol + np.dot(delta_p,delta_a)/norm_delta_p
+		ocp.model.con_h_expr = c_ol + dot(delta_p,delta_a)/norm_delta_p
 
 		# ocp.model.con_h_expr_e = c_ol + np.dot(delta_p,delta_a)/norm_delta_p
 
@@ -148,14 +150,16 @@ def acados_settings(N_horizon, T_horizon):
 
 		# Usage of slack variables to relax the above hard constraints
 		ocp.constraints.Jsh = np.eye(1)
+
 		# # slacks
 		L2_pen = 1e4 # 1e3
-		L1_pen = 1e2  #1
+		L1_pen = 1e3  #1
 
 		ocp.cost.Zl = L2_pen*np.ones((1,)) # Diagonal of hessian WRT lower slack
 		ocp.cost.Zu = L2_pen*np.ones((1,))
 		ocp.cost.zl = L1_pen*np.ones((1,)) # Gradient with respect to lower slack at intermediate shooting nodes
 		ocp.cost.zu = L1_pen*np.ones((1,))
+
 		# ocp.constraints.lh_e = h_lb
 		# ocp.constraints.uh_e = h_ub
 
@@ -175,7 +179,7 @@ def acados_settings(N_horizon, T_horizon):
 		ocp.solver_options.tf = T_horizon
 		ocp.solver_options.integrator_type = 'ERK' # ERK explicit numerical integration based on Runge-Kutta scheme, suitable for simple dynamics and fast sampling times
         # IRK implicit numerical integration based on runge-kutta scheme, suitable for complex dynamics
-		ocp.solver_options.nlp_solver_type = 'SQP_RTI'
+		ocp.solver_options.nlp_solver_type = 'SQP_RTI' # 'SQP_RTI'
         # SQP - sequential quadratic programming method, simple linear problems
         # SQP_RTI extension of SQP to real time applications, aims to reduce computational time
 		ocp.solver_options.qp_solver = 'FULL_CONDENSING_HPIPM' # FULL_CONDENSING_QPOASES
