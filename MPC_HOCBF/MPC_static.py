@@ -32,6 +32,7 @@ from mavros_msgs.srv import *
 import h5py  # use for data logging of larges sets of data
 from skimage.measure import EllipseModel
 from matplotlib.patches import Ellipse
+from ellipse import LsqEllipse
 
 
 from tf.transformations import euler_from_quaternion
@@ -64,15 +65,32 @@ ycom = []
 YawF = []
 YawC = []
 
-# readings obstacle
+# readings obstacle (for the cylinder)
 xa = []
 ya = []
-#ellipse estimation
+# obstacle readings (for the prism)
+xap = []
+yap = []
+
+#ellipse estimation from lidar data
 a_fit = []
 b_fit = []
 theta = []
-xc = []
+xc = []# for the ellipse
 yc = []
+xcp = [] # for the prism
+ycp = []
+# Correspond to cylinder
+x_ce = [] # these ones are for logging position/velocity corresponding to the lidar measurements
+y_ce = [] # so we can calculate psi_0 and psi_1 offline or after the simulation
+vx_ce = []
+vy_ce = []
+# Correspond to prism
+x_pe = [] # these ones are for logging position/velocity corresponding to the lidar measurements
+y_pe = [] # so we can calculate psi_0 and psi_1 offline or after the simulation
+vx_pe = []
+vy_pe = []
+
 
 # Analyze control input (see if error is being minimized )
 velfx=[]
@@ -85,8 +103,8 @@ uVPM = []
 vVPM = []
 
 # updated velocity field plot
-nGridX = 25  # 20                                                         # X-grid for streamlines and contours
-nGridY = 25  # 20                                                       # Y-grid for streamlines and contours
+nGridX = 20  # 20                                                         # X-grid for streamlines and contours
+nGridY = 20  # 20                                                       # Y-grid for streamlines and contours
 x_field = np.zeros((nGridX, nGridY))# np.zeros((30, 30))
 y_field = np.zeros((nGridX, nGridY)) # np.zeros((30, 30))
 u_field = np.zeros((nGridX, nGridY))
@@ -94,9 +112,12 @@ v_field = np.zeros((nGridX, nGridY))
 lidar_x = []
 lidar_y = []
 
-# log the invarient sets
+# log the invarient sets for cylinder
 psi_0 = []
 psi_1 = []
+# for prism
+psi_0p = []
+psi_1p = []
 
 U_infx = []
 V_infy=[]
@@ -113,6 +134,107 @@ Uy = []
 Uz = []
 Z = []
 VZ = []
+
+class ellipse:
+
+	def ellipse_calc(self,xa,ya, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe):
+
+		# Because the ellipse estimation is too computationally expensive for this VM 
+		# for real time estimation, we will use it for offline ellipse estimation
+		# (wont be able to do this for hardware)
+
+		#--------------Obstacle parameters-----------------------------
+		self.SF = 0.8 # safety factor distance from the obstcle (set as the width of the Clover)
+		self.SFp = 1.2 # safety factor for prism
+		self.cyl_rad = 1.5 # [m] radius of the cylinder
+		self.rec_rad = 1.25 # [m] half of the longest side of the prism
+
+		#--------------------------------------------------------------
+
+		# Doing the cylinder and prism seperately because the prism is giving straneg results on psi_1
+
+		# Iterate over rows of data (for the prism)
+		for i, (xa_row, ya_row) in enumerate(zip(xap, yap)):
+			# Ellipse model-------------------------
+			xy = np.column_stack((xa_row, ya_row))
+			ellipse_model = EllipseModel()
+			ellipse_model.estimate(xy)
+
+			# If ellipse_model.params is None, skip this iteration
+			if ellipse_model.params is None:
+				continue
+			
+			if ellipse_model.params[0] <= 11.5 - 1.25 or ellipse_model.params[0] >= 11.5 + 1.25:
+				continue
+			if ellipse_model.params[1] <= 15.2 - 1.25 or ellipse_model.params[1] >= 15.2 + 1.25:
+				continue
+
+			#----------- Calculate delta_p, delta_v, and delta_a-----------------------------------
+			delta_p = np.array([x_pe[i]-ellipse_model.params[0], y_pe[i]-ellipse_model.params[1]])
+			delta_v = np.array([vx_pe[i]-0, vy_pe[i]-0]) # static obstacle assumption for now
+
+			# Calculate norms
+			norm_delta_p = np.linalg.norm(delta_p, ord=2)  # Euclidean norm
+			norm_delta_v = np.linalg.norm(delta_v, ord=2)  # Euclidean norm
+
+			# constants
+			q1 = 12#15
+			q2 = 9#10
+			#print(max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8)) # woow, some pretty unstacle shapes come out of this on the prism
+			r = self.SFp + self.rec_rad #max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8) # make sure it is at least giving 0.8, where the max prism radius is 1.25 i believe
+
+			self.psi_0p = norm_delta_p - r
+			self.psi_1p = (np.dot(delta_p, delta_v)) / norm_delta_p + q1*(self.psi_0p)
+
+			psi_0p.append(self.psi_0p)
+			psi_1p.append(self.psi_1p)
+			# Extract parameters of the fitted ellipse
+			xcp.append(ellipse_model.params[0])
+			ycp.append(ellipse_model.params[1])
+	#--------------------------------------------------------------------------------------------
+
+		# Iterate over rows of data (for the cylinder)
+		for i, (xa_row, ya_row) in enumerate(zip(xa, ya)):#, x_ce, vx_ce, y_ce, vy_ce):
+			# Ellipse model-------------------------
+			xy = np.column_stack((xa_row, ya_row))
+			ellipse_model = EllipseModel()
+			ellipse_model.estimate(xy)
+
+			# If ellipse_model.params is None, skip this iteration
+			if ellipse_model.params is None:
+				continue
+
+			#----------- Calculate delta_p, delta_v, and delta_a-----------------------------------
+			delta_p = np.array([x_ce[i]-ellipse_model.params[0], y_ce[i]-ellipse_model.params[1]])
+			delta_v = np.array([vx_ce[i]-0, vy_ce[i]-0]) # static obstacle assumption for now
+
+			# Calculate norms
+			norm_delta_p = np.linalg.norm(delta_p, ord=2)  # Euclidean norm
+			norm_delta_v = np.linalg.norm(delta_v, ord=2)  # Euclidean norm
+
+			# constants
+			q1 = 12#15
+			q2 = 9#10
+			r = self.SF + max(ellipse_model.params[2], ellipse_model.params[3])
+
+			self.psi_0 = norm_delta_p - r
+			self.psi_1 = (np.dot(delta_p, delta_v)) / norm_delta_p + q1*(self.psi_0)
+
+			psi_0.append(self.psi_0)
+			psi_1.append(self.psi_1)
+	#--------------------------------------------------------------------------------------------
+
+
+			# Extract parameters of the fitted ellipse
+			xc.append(ellipse_model.params[0])
+			yc.append(ellipse_model.params[1])
+			a_fit.append(ellipse_model.params[2])
+			b_fit.append(ellipse_model.params[3])
+			theta.append(ellipse_model.params[4])
+		
+		# Return lists of ellipse parameters for each row of data
+		return xc, yc, a_fit, b_fit, theta, psi_0, psi_1
+
 
 class clover:
 
@@ -160,8 +282,8 @@ class clover:
 		## Compute Streamlines with stream function velocity equation
 		# Too many gridpoints is not good, it will cause the control loop to run too slow
 		# Grid parameters
-		self.nGridX = 25;  # 20 is good                                                         # X-grid for streamlines and contours
-		self.nGridY = 25;  # 20 is good                                                    # Y-grid for streamlines and contours
+		self.nGridX = 20;  # 20 is good                                                         # X-grid for streamlines and contours
+		self.nGridY = 20;  # 20 is good                                                    # Y-grid for streamlines and contours
 		self.xVals  = [-1, 21];  # ensured it is extended past the domain incase the clover leaves domain             # X-grid extents [min, max]
 		self.yVals  = [-1, 21];  #-0.3;0.3                                                 # Y-grid extents [min, max]
 
@@ -245,44 +367,19 @@ class clover:
 		i    = 0
 		dt   = 1.0/self.RATE # = dt = self.T_horizon/self.N_horizon
 
-		# # create random time array
-		# t = np.arange(0,self.STEPS,1)
-
-		# # Calculate the x and y velocity components (inertial of course)
-		# angle_degrees = 45     # Angle measured counterclockwise from the positive x-axis
-		# angle_radians = np.deg2rad(angle_degrees)
-
-		# # Calculate x and y components of the desired velocity
-		# self.velocity_x = self.V_des * np.cos(angle_radians)
-		# self.velocity_y = self.V_des * np.sin(angle_radians)
-
 		
-		# self.posx = np.linspace(self.xVals[0], self.xVals[1], len(t))
-		# self.posy = np.linspace(self.yVals[0], self.yVals[1], len(t))
-		# self.posz = np.ones(len(t)) * self.FLIGHT_ALTITUDE
-		# self.velx = np.ones(len(t)) * self.velocity_x
-		# self.vely = np.ones(len(t)) * self.velocity_y
-		# self.velz = np.zeros(len(t))
-		# self.afx = np.zeros(len(t))
-		# self.afy = np.zeros(len(t))
-		# self.afz = np.zeros(len(t))
-		# # Calculate yaw as direction of velocity
-		# self.yawc = np.arctan2(self.vely, self.velx)
-		# self.yaw_ratec = [1]*len(t)
-		# # calculate yaw_rate by dirty differentiating yaw
-		# for i in range(0, self.STEPS):
-		# 	next = self.yawc[(i+1)%self.STEPS] # 401%400 = 1 --> used for this reason (when it goes over place 400 or whatever STEPS is)
-		# 	curr = self.yawc[i]
-      	# 		# account for wrap around +- PI
-		# 	if((next-curr) < -math.pi):
-		# 		next = next + math.pi*2
-		# 	if((next-curr) >  math.pi):
-		# 		next = next - math.pi*2
-		# 	self.yaw_ratec[i] = (next-curr)/dt
 
 		#--------------Obstacle parameters-----------------------------
-		self.SF = 0.5 # safety factor distance from the obstcle (set as the width of the Clover)
-
+		self.SF = 0.8 # safety factor distance from the obstcle (set as the width of the Clover)
+		self.cyl_rad = 1.5 # [m] radius of the cylinder
+		# Center of the cylinder location for experiment
+		self.x_cyl = 6.0
+		self.y_cyl = 5.1
+		self.SFp = 1.2 # safety factor for prism
+		self.rec_rad = 1.25 # [m] half of the longest side of the prism
+		# Center of the prism for experiment
+		self.x_rec = 11.5
+		self.y_rec = 15.2
 
 		#--------------------------------------------------------------
 		
@@ -311,11 +408,20 @@ class clover:
 		# Set a flag, that will be used as a logic operator to adjust how the HOCBF is set, which depends on whether an obstacle is detected or not
 		self.object_detect = False
 
+		# Set this flag to calculate the ellipse shape on the first detection (cant iteraivly do it in this envirnment as the least squared
+		# calculation at each iteration is too computationally intensive. It sucks up all the CPU usage and slows the lidar callback loop down)
+		self.ellipse_first = False
+
+		# This flag will be used to determine which obstacle is coming next and what pose to send to the MPC solver ACADOS
+		self.obstacle_counter = 0 
+
 		 #-----Define velocity field plot logging variables--------------
 		self.count = True
 
 		self.current_state = State()
 		self.rate = rospy.Rate(20) # 20
+
+
 
 	def updateState(self, msg):
 		self.current_state = msg
@@ -348,16 +454,29 @@ class clover:
 		yaw = -euler_angles[0]+math.pi 
 		pitch = euler_angles[1]
 
+		
+
 		# Ensure there are actually lidar readings, no point in doing calculations if
 		# nothing is detected:
 		# Need to add a lidar detection threshold for ellipsoid estimation, so if we have like 1-2 or low detection we could get bad results
 		if sum(not np.isinf(range_val) for range_val in self.obs_detect) >= 4 and z_clover >= 0.65: # want the drone to be at some altitude so we are not registering ground detections
-
+		
 
 			# The angles and ranges start at -180 degrees i.e. at the right side, then go counter clockwise up to the top i.e. 180 degrees
 			self.ranges = data.ranges
 
 			angles = self.lidar_angles
+
+			# Get current state of this follower 
+			# telem = get_telemetry(frame_id='map')
+			x_clover = self.clover_pose.position.x
+			y_clover = self.clover_pose.position.y
+			z_clover = self.clover_pose.position.z
+			quaternion = [self.clover_pose.orientation.w,self.clover_pose.orientation.x, self.clover_pose.orientation.y, self.clover_pose.orientation.z ]
+			euler_angles = euler_from_quaternion(quaternion)
+			roll = euler_angles[2] #+ math.pi
+			yaw = -euler_angles[0]+math.pi 
+			pitch = euler_angles[1]
 
 
 			# Convert ranges to a NumPy array if it's not already
@@ -395,48 +514,88 @@ class clover:
 			# Filter out the inf values in the data point arrays
 			self.xa = self.xa[np.isfinite(self.xa)]
 			self.ya = self.ya[np.isfinite(self.ya)]
+#-------------------Ellipse estimation section-------------------------------------------------------------------
+			# # The least squares at each iteration is too computationally intensive for this VM system, it sucks up to much CPU 
+			# # percentage. Therefore we wont calculate here, we will log the lidar readings and calculate all of the ellipse estimations
+			# # after the simulation has run for plotting (when using on hardware, we wont have gazebo etc running so there should be enough resources)
 
-			# Append row after row of data (to log readings)
-			xa.append(self.xa.tolist())
-			ya.append(self.ya.tolist())
+			# if self.ellipse_first:
+			# 	# if an obstacle is aleady detected, do nothing
+			# 	pass
+			# else:
 
-			# Ellipse model
-			xy = np.column_stack((self.xa,self.ya))
-			ellipse_model = EllipseModel()
-			ellipse_model.estimate(xy)
+			# 	 # If no obstacle is currently detected, perform the calculation
+        	# 	# This calculation will only be performed once per new obstacle
 
-			# Extract parameters of the fitted ellipse
-			self.xc = ellipse_model.params[0]
-			self.yc = ellipse_model.params[1]
-			self.a_fit = ellipse_model.params[2]
-			self.b_fit = ellipse_model.params[3]
-			self.theta = ellipse_model.params[4]
+			# 	# Ellipse model-------------------------
+			# 	xy = np.column_stack((self.xa[1::2],self.ya[1::2]))
+			# 	ellipse_model = EllipseModel()
+			# 	ellipse_model.estimate(xy)
+
+			# 	# Extract parameters of the fitted ellipse
+			# 	self.xc = ellipse_model.params[0]
+			# 	self.yc = ellipse_model.params[1]
+			# 	self.a_fit = ellipse_model.params[2]
+			# 	self.b_fit = ellipse_model.params[3]
+			# 	self.theta = ellipse_model.params[4]
+
+			# 	self.ellipse_first = True
+
+			# 	# print(self.xc)
+
+			# 	#------compare--------
 
 
-			self.object_detect = True # Update object detected flag
+			# 	# reg = LsqEllipse().fit(xy)
+
+			# 	# center_t, width, height, phi = reg.as_parameters()
+
+			# 	# print(center_t[0])
+
+			# 	#--------------------
+
+			# 	xc.append(self.xc)
+			# 	yc.append(self.yc)
+#-----------------------------------------------------------------------------------------------------------------
+			# # Append row after row of data (to log readings)
+			# xa.append(self.xa.tolist())
+			# ya.append(self.ya.tolist())
+
+			# # Log the Clover position and velocity at the same time we are logging this lidar data reading
+			# # do this so we can calculate psi_0 and psi_1 based on the ellipse readings. Hopefully will calculate this
+			# # in real time when we get to hardware in the lab
+			# telem = get_telemetry(frame_id='map')
+			# x_ce.append(self.clover_pose.position.x)
+			# vx_ce.append(telem.vx)
+			# y_ce.append(self.clover_pose.position.y)
+			# vy_ce.append(telem.vy)
+			
+
+			
 
 			# now that the obstacle is within the lidar range, we can start calculating psi_0 and psi_1 for logging
-			# i.e. we now have an estimation on the obstacles location
+			# i.e. we now have an estimation on the obstacles location (for real time ellipse estimation we would do this here)
 
-			# Calculate delta_p, delta_v, and delta_a
-			telem = get_telemetry(frame_id='map')
-			delta_p = np.array([self.clover_pose.position.x-self.xc, self.clover_pose.position.y-self.yc])
-			delta_v = np.array([telem.vx-0, telem.vy-0]) # static obstacle assumption for now
+	#----------- Calculate delta_p, delta_v, and delta_a-----------------------------------
+			# telem = get_telemetry(frame_id='map')
+			# delta_p = np.array([self.clover_pose.position.x-self.xc, self.clover_pose.position.y-self.yc])
+			# delta_v = np.array([telem.vx-0, telem.vy-0]) # static obstacle assumption for now
 
-			# Calculate norms
-			norm_delta_p = np.linalg.norm(delta_p, ord=2)  # Euclidean norm
-			norm_delta_v = np.linalg.norm(delta_v, ord=2)  # Euclidean norm
+			# # Calculate norms
+			# norm_delta_p = np.linalg.norm(delta_p, ord=2)  # Euclidean norm
+			# norm_delta_v = np.linalg.norm(delta_v, ord=2)  # Euclidean norm
 
-			# constants
-			q1 = 12#15
-			q2 = 9#10
-			r = self.SF + max(self.a_fit, self.b_fit)
+			# # constants
+			# q1 = 12#15
+			# q2 = 9#10
+			# r = self.SF + max(self.a_fit, self.b_fit)
 
-			self.psi_0 = norm_delta_p - r
-			self.psi_1 = (np.dot(delta_p, delta_v)) / norm_delta_p + q1*(self.psi_0)
+			# self.psi_0 = norm_delta_p - r
+			# self.psi_1 = (np.dot(delta_p, delta_v)) / norm_delta_p + q1*(self.psi_0)
 
-			psi_0.append(self.psi_0)
-			psi_1.append(self.psi_1)
+			# psi_0.append(self.psi_0)
+			# psi_1.append(self.psi_1)
+	#--------------------------------------------------------------------------------------------
 
 			# Log the fist velocity field update reading
 			if self.count: 
@@ -446,17 +605,85 @@ class clover:
 				v_field[:,:] = self.Vye
 				lidar_x.append(self.xa)
 				lidar_y.append(self.ya)
-				xc.append(self.xc)
-				yc.append(self.yc)
-				a_fit.append(self.a_fit)
-				b_fit.append(self.b_fit)
-				theta.append(self.theta)
+				
 
 				# update the flag variable (turn off so we only log the first update/obstacle reading)
 				self.count = False
+			
+			if not self.object_detect:
+				self.obstacle_counter +=1 # this only increments when an obstacle was detected once
+										  # so it will be equal to 1 for the cylinder and equal to 2 for the prism
+				self.object_detect = True # Update object detected flag
+
+			# Log the Clover position and velocity at the same time we are logging this lidar data reading
+			# do this so we can calculate psi_0 and psi_1 based on the ellipse readings. Hopefully will calculate this
+			# in real time when we get to hardware in the lab
+			telem = get_telemetry(frame_id='map')
+			# Append row after row of data (to log readings)
+			if self.obstacle_counter == 1:
+				# append the readings of the cylinder
+				xa.append(self.xa.tolist())
+				ya.append(self.ya.tolist())
+				x_ce.append(self.clover_pose.position.x)
+				vx_ce.append(telem.vx)
+				y_ce.append(self.clover_pose.position.y)
+				vy_ce.append(telem.vy)
+			else:
+				# append the readings of the cylinder
+				xap.append(self.xa.tolist())
+				yap.append(self.ya.tolist())
+				x_pe.append(self.clover_pose.position.x)
+				vx_pe.append(telem.vx)
+				y_pe.append(self.clover_pose.position.y)
+				vy_pe.append(telem.vy)
+
+
+			
+			
+			
+			for j in range(self.N_horizon): # Up to N-1
+				# An obstacle was detected, use the obstacle_counter number
+				# to determine if it was the cylinder or the prism, and send on 
+				# the values accordingly
+				if self.obstacle_counter == 1:
+					# This is the static cylinder, which has a radius of (1.5m??)
+					# 	# Set the distance from the obstacle
+					r = self.SF + self.cyl_rad
+					
+					self.acados_solver.set(j, "p", np.array([self.x_cyl,0,0,self.y_cyl,0,0,r])) # Assuming a static obstacle (xc,yc)
+
+				else:
+					# This is the static prism, which has a radius of (1.25m??)
+					# 	# Set the distance from the obstacle
+					
+					r = self.SFp + self.rec_rad
+					
+					self.acados_solver.set(j, "p", np.array([self.x_rec,0,0,self.y_rec,0,0,r])) # Assuming a static obstacle (xc,yc)
+			
+			if self.obstacle_counter == 1:
+				self.acados_solver.set(self.N_horizon, "p", np.array([self.x_cyl,0,0,self.y_cyl,0,0,r])) # Assuming a static obstacle (xc,yc)
+			else:
+				self.acados_solver.set(self.N_horizon, "p", np.array([self.x_rec,0,0,self.y_rec,0,0,r])) # Assuming a static obstacle (xc,yc)
+				
 
 		else:
+			for j in range(self.N_horizon): # Up to N-1
+				# an obstacle was not detected, so set the
+				# 	# constraint condition to a trivial case
+
+				# 	# Set the distance from the obstacle
+				r = 2.5
+				
+				# 	# self.acados_solver.set(j, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
+				self.acados_solver.set(j, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
+			
+			# 	# self.acados_solver.set(self.N_horizon, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
+			self.acados_solver.set(self.N_horizon, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
 			self.object_detect = False # Update object detected flag
+
+			self.ellipse_first = False # This will ensure that when a new obstacle is detected, and it goes into
+			# the if statement above, a calculation will be run once.
+		
 
 	def controller(self,data):
 
@@ -483,9 +710,10 @@ class clover:
 
 
 			# Complete contributions from pre-computed grid distribution
-			u = griddata((self.XX_f, self.YY_f),self.Vxe_f,(x_clover,y_clover),method='linear') #+ self.u_inf #+ u_source #+ u_inf
-			v = griddata((self.XX_f, self.YY_f),self.Vye_f,(x_clover,y_clover),method='linear') #+self.v_inf#+ v_source #+self.v_inf #+ v_source #+ v_inf
-
+			u = griddata((self.XX_f, self.YY_f),self.Vxe_f,(x_clover,y_clover),method='nearest') #+ self.u_inf #+ u_source #+ u_inf 'linear' is way too computationally expensive
+			v = griddata((self.XX_f, self.YY_f),self.Vye_f,(x_clover,y_clover),method='nearest') #+self.v_inf#+ v_source #+self.v_inf #+ v_source #+ v_inf
+			# u=0.3
+			# v=0.3
 
 
 			# # Complete contributions from pre-computed grid distribution
@@ -503,7 +731,7 @@ class clover:
 
 			self.u = norm_vel[0,0]
 			self.v = norm_vel[1,0]
-			#print(self.u)
+			
 			# determine the yaw
 			self.omega = math.atan2(self.v,self.u)
 
@@ -555,6 +783,8 @@ class clover:
 			
 			target.coordinate_frame = 1 #MAV_FRAME_LOCAL_NED  # =1
 			
+			# Dont use velocity and position at the same time, of the Clover deviates from position then, flight issues will happen
+			# because of the mismatch in position and velocity.
 			target.type_mask = 8+16+32+64+128+256+2048 # Use everything! 1024-> forget yaw
 			#target.type_mask =  3576 # Use only position #POSITION_TARGET_TYPEMASK_VX_IGNORE | POSITION_TARGET_TYPEMASK_VY_IGNORE | POSITION_TARGET_TYPEMASK_VZ_IGNORE | POSITION_TARGET_TYPEMASK_AX_IGNORE | POSITION_TARGET_TYPEMASK_AY_IGNORE |POSITION_TARGET_TYPEMASK_AZ_IGNORE | POSITION_TARGET_TYPEMASK_FORCE_IGNORE | POSITION_TARGET_TYPEMASK_YAW_IGNORE | POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE # = 3576
 			#target.type_mask =  3520 # Use position and velocity
@@ -564,15 +794,7 @@ class clover:
 			# uint16 IGNORE_VY = 16
 			# uint16 IGNORE_VZ = 32
 
-			# obj = object_loc(frame_id = 'map')
-			# test2 = np.array([obj.x[0],0,0.0,obj.y[self.N_horizon],0,0.0])
-			# print(type(test2))
-			# print(test2.dtype)
-			# print(obj.y.dtype)
-			# print(obj.y)
-			# print(obj.y[0])
-			# print(obj.y[self.N_horizon])
-			# print(obj.x[-1])
+				
 			
 			# update reference
 			for j in range(self.N_horizon): # Up to N-1
@@ -582,42 +804,42 @@ class clover:
 				
 				self.acados_solver.set(j, "yref", yref)
 
-				if not self.object_detect:
-					# an obstacle was not detected, so set the
-					# constraint condition to a trivial case
+				# if not self.object_detect:
+				# 	# an obstacle was not detected, so set the
+				# 	# constraint condition to a trivial case
 
-					# Set the distance from the obstacle
-					r = 2.5
+				# 	# Set the distance from the obstacle
+				# 	r = 2.5
 				
-					# self.acados_solver.set(j, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
-					self.acados_solver.set(j, "p", np.array([7,0,0,7,0,0, r])) # Assuming a static obstacle
-				else:
-					# An obstacle was detected, therefore apply the constraints (assuming a static obstacle for now)
-					# Set the distance from the obstacle
-					r = 2.5#self.SF + max(self.a_fit, self.b_fit)
+				# 	# self.acados_solver.set(j, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
+				# 	self.acados_solver.set(j, "p", np.array([7,0,0,7,0,0, r])) # Assuming a static obstacle
+				# else:
+				# 	# An obstacle was detected, therefore apply the constraints (assuming a static obstacle for now)
+				# 	# Set the distance from the obstacle
+				# 	r = 2.5#self.SF + max(self.a_fit, self.b_fit)
 
-					# self.acados_solver.set(j, "p", np.array([self.xc,0,0,self.yc,0,0,r])) # Assuming a static obstacle
-					self.acados_solver.set(j, "p", np.array([7,0,0,7,0,0, r])) # Assuming a static obstacle
+				# 	# self.acados_solver.set(j, "p", np.array([self.xc,0,0,self.yc,0,0,r])) # Assuming a static obstacle
+				# 	self.acados_solver.set(j, "p", np.array([7,0,0,7,0,0, r])) # Assuming a static obstacle
 					
 			# Set the terminal reference state
 			yref_N = np.array([0,self.u,0,self.v,self.FLIGHT_ALTITUDE,0]) # terminal components
 			
 			self.acados_solver.set(self.N_horizon, "yref", yref_N)
-			if not self.object_detect:
-				# an obstacle was not detected, so set the
-				# constraint condition to a trivial case
-				# Set the distance from the obstacle
-				r = 2.5
-				# self.acados_solver.set(self.N_horizon, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
-				self.acados_solver.set(self.N_horizon, "p", np.array([7,0,0,7,0,0, r])) # Assuming a static obstacle
-			else:
-				# An obstacle was detected, therefore apply the constraints (assuming a static obstacle for now)
-				# Set the distance from the obstacle
-				r = 2.5#self.SF + max(self.a_fit, self.b_fit)
+			# if not self.object_detect:
+			# 	# an obstacle was not detected, so set the
+			# 	# constraint condition to a trivial case
+			# 	# Set the distance from the obstacle
+			# 	r = 2.5
+			# 	# self.acados_solver.set(self.N_horizon, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
+			# 	self.acados_solver.set(self.N_horizon, "p", np.array([7,0,0,7,0,0, r])) # Assuming a static obstacle
+			# else:
+			# 	# An obstacle was detected, therefore apply the constraints (assuming a static obstacle for now)
+			# 	# Set the distance from the obstacle
+			# 	r = 2.5#self.SF + max(self.a_fit, self.b_fit)
 
-				# Assuming a static obstacle
-				# self.acados_solver.set(self.N_horizon, "p", np.array([self.xc,0,0,self.yc,0,0,r])) # State = [x, vx, ax, y, vy, ay]
-				self.acados_solver.set(self.N_horizon, "p", np.array([7,0,0,7,0,0, r])) # Assuming a static obstacle
+			# 	# Assuming a static obstacle
+			# 	# self.acados_solver.set(self.N_horizon, "p", np.array([self.xc,0,0,self.yc,0,0,r])) # State = [x, vx, ax, y, vy, ay]
+			# 	self.acados_solver.set(self.N_horizon, "p", np.array([7,0,0,7,0,0, r])) # Assuming a static obstacle
 				
 			# Solve ocp
 			status = self.acados_solver.solve()
@@ -767,6 +989,12 @@ if __name__ == '__main__':
 		Ysl = np.concatenate((np.flip(y_range), y_1))
 		XYsl = np.vstack((Xsl,Ysl)).T
 
+		# Send and retrieve the ellipse, and psi_0 and psi_1 values
+
+		w = ellipse()
+
+		xc, yc, a_fit, b_fit, theta, psi_0, psi_1 = w.ellipse_calc(xa,ya, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe)
+
 
 		# debug section
 		# Plot logged data for analyses and debugging
@@ -862,6 +1090,29 @@ if __name__ == '__main__':
 		plt.plot(psi_0,'r',label='psi_0')
 		plt.plot(psi_1,'b',label='psi_1')
 		plt.ylabel('b(x)')
+		plt.xlabel('Time [s]')
+		plt.legend()
+		plt.grid(True)
+
+		plt.figure(6)
+		plt.plot(xc, yc, 'ro', label='ellipse-center', markersize=3)  # 'ro' for red circles
+		plt.ylabel('center[m]')
+		plt.xlabel('Time [s]')
+		plt.legend()
+		plt.grid(True)
+
+		plt.figure(7)
+		plt.plot(psi_0p,'r',label='psi_0p')
+		plt.plot(psi_1p,'b',label='psi_1p')
+		plt.ylim(-2, 30)
+		plt.ylabel('b(x)')
+		plt.xlabel('Time [s]')
+		plt.legend()
+		plt.grid(True)
+
+		plt.figure(8)
+		plt.plot(xcp, ycp, 'ro', label='ellipse-center', markersize=3)  # 'ro' for red circles
+		plt.ylabel('center[m]')
 		plt.xlabel('Time [s]')
 		plt.legend()
 		plt.grid(True)
