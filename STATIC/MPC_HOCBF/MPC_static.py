@@ -1069,7 +1069,7 @@ with h5py.File(file_name, 'a') as hf:
 			# Psi Calculations - cylinder
 			iteration_group.create_dataset('x_cloverce', data=x_ce)
 			iteration_group.create_dataset('vx_cloverce', data=vx_ce)
-			iteration_group.create_dataset('y_cloverce', data=x_ce)
+			iteration_group.create_dataset('y_cloverce', data=y_ce)
 			iteration_group.create_dataset('vy_cloverce', data=vy_ce)
 			iteration_group.create_dataset('psi_0', data=psi_0)
 			iteration_group.create_dataset('psi_1', data=psi_1)
