@@ -142,7 +142,7 @@ VZ = []
 
 # Create a HDF5 file name
 # Open the HDF5 file globally
-file_name = 'test1.h5'
+file_name = 'mpc_static4.h5'
  # Open the HDF5 file for writing
 with h5py.File(file_name, 'a') as hf:
 
@@ -1052,7 +1052,7 @@ with h5py.File(file_name, 'a') as hf:
 			# Psi Calculations - prism
 			iteration_group.create_dataset('x_cloverpe', data=x_pe)
 			iteration_group.create_dataset('vx_cloverpe', data=vx_pe)
-			iteration_group.create_dataset('y_cloverpe', data=x_pe)
+			iteration_group.create_dataset('y_cloverpe', data=y_pe)
 			iteration_group.create_dataset('vy_cloverpe', data=vy_pe)
 			iteration_group.create_dataset('psi_0p', data=psi_0p)
 			iteration_group.create_dataset('psi_1p', data=psi_1p)
