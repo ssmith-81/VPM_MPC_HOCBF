@@ -673,8 +673,8 @@ with h5py.File(file_name, 'a') as hf:
 
 					# Log the lidar readings iteratively here for the prism
 					# Log obstacle detection for prism
-					lidar_cylinder.create_dataset(f'xap_{self.lidar_timestamp}', data=self.xa)
-					lidar_cylinder.create_dataset(f'yap_{self.lidar_timestamp}', data=self.ya)
+					lidar_prism.create_dataset(f'xap_{self.lidar_timestamp}', data=self.xa)
+					lidar_prism.create_dataset(f'yap_{self.lidar_timestamp}', data=self.ya)
 
 
 				
