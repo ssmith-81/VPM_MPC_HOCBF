@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 # * Simplified complex trajectory tracking in OFFBOARD mode
 # *
@@ -25,6 +25,7 @@ from panel_functions import CLOVER_COMPONENTS, CLOVER_STREAM_GEOMETRIC_INTEGRAL,
 from scipy.interpolate import griddata
 
 import h5py  # use for data logging of larges sets of data
+import os
 
 from tf.transformations import euler_from_quaternion
 
@@ -39,7 +40,10 @@ from time import sleep
 from mavros_msgs.msg import *
 from mavros_msgs.srv import *
 
-rospy.init_node('clover_panel') # Figure8 is the name of the ROS node
+rospy.init_node('hybrid_panel_dynamic') # Figure8 is the name of the ROS node
+
+# Set the use_sim_time parameter to true
+rospy.set_param('use_sim_time', True)
 
 # Define the Clover service functions, the only ones used in this application are navigate and land.
 
@@ -54,6 +58,8 @@ land = rospy.ServiceProxy('land', Trigger)
 
 # Release service is used to allow for complex trajectory publishing i.e it stops the navigate service from publishing setpoints because you dont want two sources of publishing at the same time.
 release = rospy.ServiceProxy('simple_offboard/release', Trigger)
+
+set_state = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState) # Set the state of the obstacle
 
 # Deine math parameter
 PI_2 = math.pi/2
@@ -101,11 +107,22 @@ evx=[]
 evy=[]
 eyaw=[]
 
+# Log the time for the position control variables
+time_now = []
+
+# Get the path to the directory containing the Python script
+script_dir = os.path.dirname(os.path.realpath(__file__))
+
 # Create a HDF5 file name
 # Open the HDF5 file globally
-file_name = 'test3.h5'
+file_name = 'VPM_dynamic.h5'
+
+# Construct the absolute path to the HDF5 file
+absolute_file_path = os.path.join(script_dir, file_name)
+
+
  # Open the HDF5 file for writing
-with h5py.File(file_name, 'a') as hf:
+with h5py.File(absolute_file_path, 'a') as hf:
 
 
 			
@@ -168,7 +185,7 @@ with h5py.File(file_name, 'a') as hf:
             self.v = 0
 
             # Define the max velocity allowed for the Clover
-            self.vel_max = 0.75 # [m/s]
+            self.vel_max = 0.90 # [m/s]
 
             # #-------------------- Offline Panel Calculations---------------------------------------------------
 
@@ -242,10 +259,21 @@ with h5py.File(file_name, 'a') as hf:
 
     #---------Prepare the obstacle trajectories-------------------------------------------------------------------------------------
 
+             # global static variables
+            self.FLIGHT_ALTITUDE = FLIGHT_ALTITUDE          # fgdf
+            self.RATE            = RATE                     # loop rate hz
+            self.FRAME           = REF_FRAME                # Reference frame for complex trajectory tracking
+
+
             self.CYCLE_S         = CYCLE_S                  # time to complete one figure 8 cycle in seconds
-            self.CYCLE_C         = 12              # Cycle time for the circle
+            self.CYCLE_C         = 12              # Cycle time for the circle in seconds
             self.STEPS           = int( self.CYCLE_S * self.RATE )
             self.STEPS_C           = int( self.CYCLE_C * self.RATE )
+            dadt = math.pi*2 / self.CYCLE_S # first derivative of angle with respect to time
+            r    = RADIUS		# Set the radius of the figure-8
+
+            dadt_c = math.pi*2 / self.CYCLE_C # first derivative of angle with respect to time
+            rc = 2.0 # radius of the circle
 
             # create random time array with enough elements to complete the entire figure-8 sequence
             t = np.arange(0,self.STEPS,1)
@@ -254,20 +282,20 @@ with h5py.File(file_name, 'a') as hf:
 
             # Create arrays for each variable we want to feed information to (for the cylinder, big box 2
             # which will follow the figure 8 trajectory):
-            posx = [1]*len(t)
-            posy = [1]*len(t)
-            posz = [1]*len(t)
+            self.posx = [1]*len(t)
+            self.posy = [1]*len(t)
+            self.posz = [1]*len(t)
             velx = [1]*len(t)
             vely = [1]*len(t)
             velz = [1]*len(t)
             afx = [1]*len(t)
             afy = [1]*len(t)
             afz = [1]*len(t)
-            self.rotate = 0#math.pi/2 # rotate figure-8
+            self.rotate = 0 #math.pi/2 # rotate figure-8
             # Trajectory for the prism or other cylinder which will follow the circular trajectory
-            posx2 = [1]*len(tc)
-            posy2 = [1]*len(tc)
-            posz2 = [1]*len(tc)
+            self.posx2 = [1]*len(tc)
+            self.posy2 = [1]*len(tc)
+            self.posz2 = [1]*len(tc)
             velx2 = [1]*len(tc)
             vely2 = [1]*len(tc)
             velz2 = [1]*len(tc)
@@ -275,19 +303,101 @@ with h5py.File(file_name, 'a') as hf:
             afy2 = [1]*len(tc)
             afz2 = [1]*len(tc)
 
+            for i in range(0, self.STEPS):
+		
+                # calculate the parameter 'a' which is an angle sweeping from -pi/2 to 3pi/2
+                # through the figure-8 curve or circular curve
+                a = (-math.pi/2) + i*(math.pi*2/self.STEPS)
+                # These are definitions that will make position, velocity, and acceleration calulations easier:
+                c = math.cos(a)
+                c2a = math.cos(2.0*a)
+                c4a = math.cos(4.0*a)
+                c2am3 = c2a-3.0
+                c2am3_cubed = c2am3*c2am3*c2am3
+                s = math.sin(a)
+                cc = c*c
+                ss = s*s
+                sspo = (s*s)+1.0 # sin squared plus one
+                ssmo = (s*s)-1.0 # sin squared minus one
+                sspos = sspo*sspo
+                
+                # For more information on these equations, refer to the GitBook Clover documentation:
+                
+                # Position (figure-8)
+                # https:#www.wolframalpha.com/input/?i=%28-r*cos%28a%29*sin%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29
+                self.posx[i] = -(r*c*s) / sspo +8
+                # https:#www.wolframalpha.com/input/?i=%28r*cos%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29
+                self.posy[i] =  (r*c)   / sspo + 8
+                self.posz[i] =  1.749502
+
+                # Transform the figure-8, where we rotate it by 45 degrees or pi/4
+                # posx[i] = posx[i]*math.cos(self.rotate) - posy[i]*math.sin(self.rotate) + 8.5
+                # posy[i] = posx[i]*math.sin(self.rotate) + posy[i]*math.cos(self.rotate) + 8.5
+
+
+                # Velocity (figure-8)
+                # https:#www.wolframalpha.com/input/?i=derivative+of+%28-r*cos%28a%29*sin%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29+wrt+a
+                velx[i] =   dadt*r* ( ss*ss + ss + (ssmo*cc) ) / sspos
+                # https:#www.wolframalpha.com/input/?i=derivative+of+%28r*cos%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29+wrt+a
+                vely[i] =  -dadt*r* s*( ss + 2.0*cc + 1.0 )    / sspos
+                velz[i] =  0.0
+
+                # Transform the figure-8, where we rotate it by 45 degrees or pi/4
+                velx[i] = velx[i]*math.cos(self.rotate) - vely[i]*math.sin(self.rotate)
+                vely[i] = velx[i]*math.sin(self.rotate) + vely[i]*math.cos(self.rotate)
+
+                # Acceleration (figure-8)
+                # https:#www.wolframalpha.com/input/?i=second+derivative+of+%28-r*cos%28a%29*sin%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29+wrt+a
+                afx[i] =  -dadt*dadt*8.0*r*s*c*((3.0*c2a) + 7.0)/ c2am3_cubed
+                # https:#www.wolframalpha.com/input/?i=second+derivative+of+%28r*cos%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29+wrt+a
+                afy[i] =  dadt*dadt*r*c*((44.0*c2a) + c4a - 21.0) / c2am3_cubed
+                afz[i] =  0.0
+
+                # Transform the figure-8, where we rotate it by 45 degrees or pi/4
+                afx[i] = afx[i]*math.cos(self.rotate) - afy[i]*math.sin(self.rotate)
+                afy[i] = afx[i]*math.sin(self.rotate) + afy[i]*math.cos(self.rotate)
+
+		
+            for i in range(0, self.STEPS_C):
+
+                # calculate the parameter 'a' which is an angle sweeping from -pi/2 to 3pi/2
+                # through the figure-8 curve or circular curve
+                a = (-math.pi/2) + i*(math.pi*2/self.STEPS_C)
+                # These are definitions that will make position, velocity, and acceleration calulations easier:
+                c = math.cos(a)
+                s = math.sin(a)
+                
+
+                # Position (circele)
+                # https:#www.wolframalpha.com/input/?i=%28-r*cos%28a%29*sin%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29
+                self.posx2[i] = rc*c + 15
+                # https:#www.wolframalpha.com/input/?i=%28r*cos%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29
+                self.posy2[i] = rc*s + 15
+                self.posz2[i] =  1.749502
+
+                # Velocity (circle)
+                # https:#www.wolframalpha.com/input/?i=derivative+of+%28-r*cos%28a%29*sin%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29+wrt+a
+                velx2[i] =  -dadt_c*rc*s
+                # https:#www.wolframalpha.com/input/?i=derivative+of+%28r*cos%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29+wrt+a
+                vely2[i] =  dadt_c*rc*c
+                velz2[i] =  0.0
+
+                # Acceleration (circle)
+                # https:#www.wolframalpha.com/input/?i=second+derivative+of+%28-r*cos%28a%29*sin%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29+wrt+a
+                afx2[i] =  -dadt_c*dadt_c*rc*c
+                # https:#www.wolframalpha.com/input/?i=second+derivative+of+%28r*cos%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29+wrt+a
+                afy2[i] =  -dadt_c*dadt_c*rc*s
+                afz2[i] =  0.0
 
 
 
+        # Set the obstacle states
+            self.pub_obs = rospy.Publisher('/gazebo/set_model_state', ModelState, queue_size=10)
 
 
 
 
     #--------------------------------------------------------------------------------------------------------------------------------
-
-            # global static variables
-            self.FLIGHT_ALTITUDE = FLIGHT_ALTITUDE          # fgdf
-            self.RATE            = RATE                     # loop rate hz
-            self.FRAME           = REF_FRAME                # Reference frame for complex trajectory tracking
 
             self.last_timestamp = None # make sure there is a timestamp
 
@@ -852,6 +962,9 @@ with h5py.File(file_name, 'a') as hf:
             self.Vxe_f = self.Vxe.flatten()
             self.Vye_f = self.Vye.flatten()
 
+            # Get the actual time:
+            current_time = rospy.Time.now()
+
             #-------------External LOG------------------
             # Create a group to store velocity field for this iteration/time
             iteration_group = hf.create_group(f'Field_update_iteration_{self.lidar_timestamp}')
@@ -872,6 +985,7 @@ with h5py.File(file_name, 'a') as hf:
             # log the current clover position as well for plotting marker location on map plot
             iteration_group.create_dataset('x_clover_cur', data=self.clover_pose.position.x)
             iteration_group.create_dataset('y_clover_cur', data=self.clover_pose.position.y)
+            iteration_group.create_dataset('time_actual', data=current_time)
 
             #------------------------------------------
 
@@ -943,9 +1057,54 @@ with h5py.File(file_name, 'a') as hf:
             target = PositionTarget()
             rr = rospy.Rate(self.RATE)
 
+            # Define object that will be published
+            state_msg_8 = ModelState() # figure-8 publisher object
+            state_msg_circle = ModelState() # circle publisher object
+
+            state_msg_8.model_name = 'Big box 2'
+            state_msg_circle.model_name = 'Big box 3'
+            rr = rospy.Rate(self.RATE)
+            k=0
+            q = 0
+
             release() # stop navigate service from publishing before beginning the figure-8 publishing
 
             while not rospy.is_shutdown():
+
+                # # Update the position of the object (figure-8)
+                # state_msg_8.pose.position.x = self.posx[k]
+                # state_msg_8.pose.position.y = self.posy[k]
+                # state_msg_8.pose.position.z = self.posz[k]
+                # state_msg_8.pose.orientation.x = 0
+                # state_msg_8.pose.orientation.y = 0
+                # state_msg_8.pose.orientation.z = 0
+                # state_msg_8.pose.orientation.w = 0
+
+                # # Update the position of the object (circle)
+                # state_msg_circle.pose.position.x = self.posx2[q]
+                # state_msg_circle.pose.position.y = self.posy2[q]
+                # state_msg_circle.pose.position.z = self.posz2[q]
+                # state_msg_circle.pose.orientation.x = 0
+                # state_msg_circle.pose.orientation.y = 0
+                # state_msg_circle.pose.orientation.z = 0
+                # state_msg_circle.pose.orientation.w = 0
+
+                # # figure_8 = set_state( state_msg_8 )
+
+                # # circle = set_state(state_msg_circle)
+
+                # self.pub_obs.publish(state_msg_circle)
+
+                # self.pub_obs.publish(state_msg_8)
+
+                # k = k+1
+                # q = q+1
+                # if k >= self.STEPS: 
+                #     k = 0 # Reset the counter
+                #     # break
+                # if q >= self.STEPS_C:
+                #     q = 0
+
                 # Trajectory publishing-----------------------------------------------
                 target.header.frame_id = self.FRAME  # Define the frame that will be used
 
@@ -985,6 +1144,7 @@ with h5py.File(file_name, 'a') as hf:
 
 
                 self.publisher.publish(target)
+		
 
 
 
@@ -1016,6 +1176,15 @@ with h5py.File(file_name, 'a') as hf:
                 velcy.append(self.v)
                 # U_infx.append(self.U_inf)
                 # V_infy.append(self.V_inf)
+
+                 # Get the actual time:
+                current_time = rospy.Time.now()
+                time_now.append(current_time.to_sec())
+
+                get_time = rospy.get_rostime()
+
+
+                # print('time_drone:', current_time.to_sec(), get_time.to_sec())
 
 
                 if math.sqrt((x_clover-self.xsi) ** 2 + (y_clover-self.ysi) ** 2) < 0.6: # 0.4
@@ -1059,6 +1228,7 @@ with h5py.File(file_name, 'a') as hf:
             iteration_group.create_dataset('vely_clover', data=velfy)
             iteration_group.create_dataset('velx_com', data=velcx)
             iteration_group.create_dataset('vely_com', data=velcy)
+            iteration_group.create_dataset('time_now', data=time_now)
                 #------------------------------------------
             #print(xa)
             #print(xf)
