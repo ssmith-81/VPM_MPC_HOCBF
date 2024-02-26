@@ -1,0 +1,12 @@
+
+<launch>
+    <!-- Launch your first node -->
+    <node name="set_obstacle" pkg="clover" type="set_object_state.py" output="screen"/>
+
+    <!-- Launch your second node -->
+    <node name="hybrid_panel_dynamic" pkg="clover" type="hybrid_panel_dynamic.py" output="screen"/>
+    
+     <!-- Launch your third node -->
+    <node name="groundtruth_pose" pkg="clover" type="groundtruth_pose.py" output="screen"/>
+</launch>
+
