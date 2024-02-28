@@ -446,8 +446,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 					dt = current_timestamp - self.last_timestamp
 
 					# Temporary constant gains
-					L1 = 15
-					L2 = 25
+					L1 = 20
+					L2 = 30
 					L3 = 15
 
 					# Update the observer for the x-dynamic direction
@@ -481,10 +481,16 @@ with h5py.File(absolute_file_path, 'a') as hf:
 						# Publish state estimation to the main node file for use in the MPC
 						self.AHOSMO.x = self.obs_x1 # send in the actual position values to the main script, not the estimation
 						self.AHOSMO.y = self.obs_y1 
-						self.AHOSMO.vx = x2hat
-						self.AHOSMO.vy = y2hat
-						self.AHOSMO.ax = x3hat
-						self.AHOSMO.ay = y3hat
+						# feed observer estimations
+						# self.AHOSMO.vx = x2hat
+						# self.AHOSMO.vy = y2hat
+						# self.AHOSMO.ax = x3hat
+						# self.AHOSMO.ay = y3hat
+						# feed actual dynamics
+						self.AHOSMO.vx = self.obs_vx1
+						self.AHOSMO.vy = self.obs_vy1
+						self.AHOSMO.ax = self.obs_ax1
+						self.AHOSMO.ay = self.obs_ay1
 					
 					else:
 					# This is the second moving cylinder, which has a radius of (1.5m??)
@@ -507,10 +513,16 @@ with h5py.File(absolute_file_path, 'a') as hf:
 						# Publish state estimation to the main node file for use in the MPC
 						self.AHOSMO.x = self.obs_x2 # send in the actual position values to the main script, not the estimation
 						self.AHOSMO.y = self.obs_y2 
-						self.AHOSMO.vx = x2hat
-						self.AHOSMO.vy = y2hat
-						self.AHOSMO.ax = x3hat
-						self.AHOSMO.ay = y3hat
+						# feed observer estimations
+						# self.AHOSMO.vx = x2hat
+						# self.AHOSMO.vy = y2hat
+						# self.AHOSMO.ax = x3hat
+						# self.AHOSMO.ay = y3hat
+						# feed actual dynamics
+						self.AHOSMO.vx = self.obs_vx2
+						self.AHOSMO.vy = self.obs_vy2
+						self.AHOSMO.ax = self.obs_ax2
+						self.AHOSMO.ay = self.obs_ay2
 					
 
 				
@@ -642,7 +654,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 
 			# Debug section, need matplotlib to plot the results for SITL
-			plt.figure(10)
+			plt.figure(11)
 			plt.subplot(311)
 			plt.plot(time_obs1,x_obs,'r',label='x-pos-est')
 			plt.plot(time_obs1,x_obsr,'b--',label='x-pos')
@@ -662,6 +674,28 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			plt.grid(True)
 			plt.ylabel('Position [m]')
 			plt.xlabel('Time [s]')
+
+			plt.figure(12)
+			plt.subplot(311)
+			plt.plot(time_obs2,x_obs2,'r',label='x-pos-est')
+			plt.plot(time_obs2,x_obsr2,'b--',label='x-pos')
+			plt.legend()
+			plt.grid(True)
+			plt.ylabel('Position [m]')
+			plt.subplot(312)
+			plt.plot(time_obs2,vx_obs2,'r',label='x-vel-est')
+			plt.plot(time_obs2,vx_obsr2,'b--',label='x-vel')
+			plt.legend()
+			plt.grid(True)
+			plt.ylabel('Velocity [m/s]')
+			plt.subplot(313)
+			plt.plot(time_obs2,ax_obs2,'r',label='ax-est')
+			plt.plot(time_obs2,ax_obsr2,'b--',label='ax-real')
+			plt.legend()
+			plt.grid(True)
+			plt.ylabel('Position [m]')
+			plt.xlabel('Time [s]')
+			
 			
 			
 			# # observer plot

@@ -1238,6 +1238,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
                 target.acceleration_or_force.z = 0
 
                 # Gather yaw for publishing
+                self.omega = math.atan2(x8[3],x8[1])
                 target.yaw = self.omega
 
                 # Gather yaw rate for publishing
