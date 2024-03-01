@@ -168,7 +168,7 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 
 # Create a HDF5 file name
 # Open the HDF5 file globally
-file_name = 'AHOSMO.h5'
+file_name = 'AHOSMO2.h5'
 
 # Construct the absolute path to the HDF5 file
 absolute_file_path = os.path.join(script_dir, file_name)
@@ -235,10 +235,12 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			self.x1hat_cur = 0
 			self.x2hat_cur = 0
 			self.x3hat_cur = 0
+			self.x4hat_cur = 0
 
 			self.y1hat_cur = 0
 			self.y2hat_cur = 0
 			self.y3hat_cur = 0
+			self.y4hat_cur = 0
 
 
 			
@@ -427,6 +429,28 @@ with h5py.File(absolute_file_path, 'a') as hf:
 					self.obstacle_counter +=1 # this only increments when an obstacle was detected once
 												# so it will be equal to 1 for the cylinder and equal to 2 for the prism
 					self.object_detect = True # Update object detected flag
+					if self.obstacle_counter == 1:
+						# set iniital condition for the first obstacle
+						self.x1hat_cur = self.obs_x1
+						self.x2hat_cur = self.obs_vx1#0.0
+						self.x3hat_cur = self.obs_ax1#0.0
+
+						self.y1hat_cur = self.obs_y1
+						self.y2hat_cur = self.obs_vy1#0.0
+						self.y3hat_cur = self.obs_ay1#0.0
+					else:
+						# set initial condition for the second obstacle
+						
+						self.x1hat_cur = self.obs_x2
+						self.x2hat_cur = self.obs_vx2#0.0
+						self.x3hat_cur = self.obs_ax2#0.0
+
+						self.y1hat_cur = self.obs_y2
+						self.y2hat_cur = self.obs_vy2#0.0
+						self.y3hat_cur = self.obs_ay2#0.0
+
+
+
 
 				# Calculate the obstacles position, velocity, and acceleration in the drones reference frame using the AHOSMO
 				# An obstacle was detected, use the obstacle_counter number
@@ -438,6 +462,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				else:
 					# This is the second moving cylinder, which has a radius of (1.5m??)
 					center = np.array([self.obs_x2,self.obs_y2])
+					
 
 				if self.last_timestamp is not None:
 
@@ -446,19 +471,32 @@ with h5py.File(absolute_file_path, 'a') as hf:
 					dt = current_timestamp - self.last_timestamp
 
 					# Temporary constant gains
-					L1 = 20
-					L2 = 30
-					L3 = 15
+					L1 = 15 # 20
+					L2 = 15 # 30
+					L3 = 7 # 15
+					L4 = 15
 
 					# Update the observer for the x-dynamic direction
+					# second order differntiator
 					x1hat = self.x1hat_cur + dt*(self.x2hat_cur + L1*(abs(center[0] - self.x1hat_cur)**(2/3))*np.sign(center[0]-self.x1hat_cur))
 					x2hat = self.x2hat_cur + dt*(self.x3hat_cur + L2*(abs(center[0] - self.x1hat_cur)**(1/3))*np.sign(center[0]-self.x1hat_cur))
 					x3hat = self.x3hat_cur + dt*(L3*np.sign(center[0]-self.x1hat_cur))
+					# third order differntiator
+					# x1hat = self.x1hat_cur + dt*(self.x2hat_cur + L1*(abs(center[0] - self.x1hat_cur)**(3/4))*np.sign(center[0]-self.x1hat_cur))
+					# x2hat = self.x2hat_cur + dt*(self.x3hat_cur + L2*(abs(center[0] - self.x1hat_cur)**(2/4))*np.sign(center[0]-self.x1hat_cur))
+					# x3hat = self.x3hat_cur + dt*(self.x4hat_cur + L3*(abs(center[0] - self.x1hat_cur)**(1/4))*np.sign(center[0]-self.x1hat_cur))
+					# x4hat = self.x4hat_cur + dt*(L4*np.sign(center[0]-self.x1hat_cur))
 
 					# Update the observer for the x-dynamic direction
+					# second order differnetiator
 					y1hat = self.y1hat_cur + dt*(self.y2hat_cur + L1*(abs(center[1] - self.y1hat_cur)**(2/3))*np.sign(center[1]-self.y1hat_cur))
 					y2hat = self.y2hat_cur + dt*(self.y3hat_cur + L2*(abs(center[1] - self.y1hat_cur)**(1/3))*np.sign(center[1]-self.y1hat_cur))
 					y3hat = self.y3hat_cur + dt*(L3*np.sign(center[1]-self.y1hat_cur))
+					# third order differntiator
+					# y1hat = self.y1hat_cur + dt*(self.y2hat_cur + L1*(abs(center[1] - self.y1hat_cur)**(3/4))*np.sign(center[1]-self.y1hat_cur))
+					# y2hat = self.y2hat_cur + dt*(self.y3hat_cur + L2*(abs(center[1] - self.y1hat_cur)**(2/4))*np.sign(center[1]-self.y1hat_cur))
+					# y3hat = self.y3hat_cur + dt*(self.y4hat_cur + L3*(abs(center[1] - self.y1hat_cur)**(1/4))*np.sign(center[1]-self.y1hat_cur))
+					# y4hat = self.y4hat_cur + dt*(L4*np.sign(center[1]-self.y1hat_cur))
 
 					if self.obstacle_counter == 1:
 					# This is the first moving cylinder, which has a radius of (1.5m??)
@@ -494,6 +532,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 					
 					else:
 					# This is the second moving cylinder, which has a radius of (1.5m??)
+						print(x1hat)
+						print(self.obs_x2)
 						x_obs2.append(x1hat)
 						vx_obs2.append(x2hat)
 						ax_obs2.append(x3hat)
@@ -533,26 +573,36 @@ with h5py.File(absolute_file_path, 'a') as hf:
 					self.x1hat_cur = x1hat
 					self.x2hat_cur = x2hat
 					self.x3hat_cur = x3hat
+					# self.x4hat_cur = x4hat
 
 					self.y1hat_cur = y1hat
 					self.y2hat_cur = y2hat
 					self.y3hat_cur = y3hat
+					# self.y4hat_cur = y4hat
 
 					
 
 				# update last_timestamp to current timestamp
 				self.last_timestamp = current_timestamp
 			else:
+
+				# Retrieve the current timestamp in seconds
+				current_timestamp = data.header.stamp.to_sec()
+
 				self.object_detect = False # Update object detected flag
 
-				# Re-anitialize the observer calculations to zero when nothing is calculated
 				self.x1hat_cur = 0.0
 				self.x2hat_cur = 0.0
 				self.x3hat_cur = 0.0
+				self.x4hat_cur = 0.0
 
 				self.y1hat_cur = 0.0
 				self.y2hat_cur = 0.0
 				self.y3hat_cur = 0.0
+				self.y4hat_cur = 0.0
+
+
+
 
 				# When nothing is being detected, publish zeros for the obstacle state
 				# Publish state estimation to the main node file for use in the MPC
@@ -564,6 +614,9 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				self.AHOSMO.ay = self.y3hat_cur
 
 				self.obstacle_dynamics_pub.publish(self.AHOSMO)
+
+				# update last_timestamp to current timestamp
+				self.last_timestamp = current_timestamp
 				
 				
 				
@@ -664,12 +717,14 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			plt.subplot(312)
 			plt.plot(time_obs1,vx_obs,'r',label='x-vel-est')
 			plt.plot(time_obs1,vx_obsr,'b--',label='x-vel')
+			# plt.ylim(-8, 8)  # Set y-axis limits from -8 to 8
 			plt.legend()
 			plt.grid(True)
 			plt.ylabel('Velocity [m/s]')
 			plt.subplot(313)
 			plt.plot(time_obs1,ax_obs,'r',label='ax-est')
 			plt.plot(time_obs1,ax_obsr,'b--',label='ax-real')
+			# plt.ylim(-5, 5)  # Set y-axis limits from 0 to 8
 			plt.legend()
 			plt.grid(True)
 			plt.ylabel('Position [m]')
@@ -685,12 +740,14 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			plt.subplot(312)
 			plt.plot(time_obs2,vx_obs2,'r',label='x-vel-est')
 			plt.plot(time_obs2,vx_obsr2,'b--',label='x-vel')
+			# plt.ylim(-8, 8)  # Set y-axis limits from 0 to 8
 			plt.legend()
 			plt.grid(True)
 			plt.ylabel('Velocity [m/s]')
 			plt.subplot(313)
 			plt.plot(time_obs2,ax_obs2,'r',label='ax-est')
 			plt.plot(time_obs2,ax_obsr2,'b--',label='ax-real')
+			# plt.ylim(-5, 5)  # Set y-axis limits from 0 to 8
 			plt.legend()
 			plt.grid(True)
 			plt.ylabel('Position [m]')

@@ -180,6 +180,9 @@ absolute_file_path = os.path.join(script_dir, file_name)
  # Open the HDF5 file for writing
 with h5py.File(absolute_file_path, 'a') as hf:
 
+    lidar_prism = hf.create_group('Lidar_reading_cylinder2')
+    lidar_cylinder = hf.create_group('Lidar_reading_cylinder1')
+
     class ellipse:
 
         def ellipse_calc(self,xa,ya, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe):
@@ -705,6 +708,38 @@ with h5py.File(absolute_file_path, 'a') as hf:
                     self.obstacle_counter +=1 # this only increments when an obstacle was detected once
                                         # so it will be equal to 1 for the cylinder and equal to 2 for the prism
                     self.object_detect = True # Update object detected flag
+
+                # Log the Clover position and velocity at the same time we are logging this lidar data reading
+                # do this so we can calculate psi_0 and psi_1 based on the ellipse readings. Hopefully will calculate this
+                # in real time when we get to hardware in the lab
+                telem = get_telemetry(frame_id='map')
+                # Append row after row of data (to log readings)
+                if self.obstacle_counter == 1:
+                    # append the readings of the cylinder
+                    xa.append(self.xa.tolist())
+                    ya.append(self.ya.tolist())
+                    x_ce.append(self.clover_pose.position.x) # current clover state of reading
+                    vx_ce.append(telem.vx)
+                    y_ce.append(self.clover_pose.position.y)
+                    vy_ce.append(telem.vy)
+
+                    # Log the lidar readings iteratively here for the cylinder
+                    # Log obstacle detection for cylinder
+                    lidar_cylinder.create_dataset(f'xac_{self.lidar_timestamp}', data=self.xa)
+                    lidar_cylinder.create_dataset(f'yac_{self.lidar_timestamp}', data=self.ya)
+                else:
+                    # append the readings of the cylinder
+                    xap.append(self.xa.tolist())
+                    yap.append(self.ya.tolist())
+                    x_pe.append(self.clover_pose.position.x)
+                    vx_pe.append(telem.vx)
+                    y_pe.append(self.clover_pose.position.y)
+                    vy_pe.append(telem.vy)
+
+                    # Log the lidar readings iteratively here for the prism
+                    # Log obstacle detection for prism
+                    lidar_prism.create_dataset(f'xap_{self.lidar_timestamp}', data=self.xa)
+                    lidar_prism.create_dataset(f'yap_{self.lidar_timestamp}', data=self.ya)
 
 
                 # Update the current state of obstacle from the observer
@@ -1329,6 +1364,53 @@ with h5py.File(absolute_file_path, 'a') as hf:
             q=clover(FLIGHT_ALTITUDE = 0.7, RATE = 50, RADIUS = 2.0, CYCLE_S = 13, REF_FRAME = 'map', N_horizon=25, T_horizon=5.0)
             
             q.main()
+
+            # Send and retrieve the ellipse, and psi_0 and psi_1 values
+
+            w = ellipse()
+
+            xc, yc, a_fit, b_fit, theta, psi_0, psi_1 = w.ellipse_calc(xa,ya, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe)
+
+
+
+            #-------------External LOG------------------
+            # Create a group to store velocity field for this iteration/time
+            iteration_group = hf.create_group('LiDar_cyl_figure8_results')
+            # Have to log lidar readings in the actual lidar loop. this ie because when we append
+            # the readings row after row, the rows will have different lengths. h5 tries to convert it
+            # to numpy arrays which errors out because all the rows are differenet lengths. Se we have to log
+            # the lidar readings iteratively/seperately
+            # Ellipse estimations
+            iteration_group.create_dataset('xcp', data=xcp)
+            iteration_group.create_dataset('ycp', data=ycp)
+            iteration_group.create_dataset('a_fitp', data=a_fitp)
+            iteration_group.create_dataset('b_fitp', data=b_fitp)
+            iteration_group.create_dataset('thetap', data=thetap)
+            # Psi Calculations - prism
+            iteration_group.create_dataset('x_cloverpe', data=x_pe)
+            iteration_group.create_dataset('vx_cloverpe', data=vx_pe)
+            iteration_group.create_dataset('y_cloverpe', data=y_pe)
+            iteration_group.create_dataset('vy_cloverpe', data=vy_pe)
+            iteration_group.create_dataset('psi_0p', data=psi_0p)
+            iteration_group.create_dataset('psi_1p', data=psi_1p)
+            iteration_group.create_dataset('r_rec', data=r_rec)
+
+
+            iteration_group = hf.create_group('LiDar_cyl_circle_results')
+            # Ellipse estimations
+            iteration_group.create_dataset('xc', data=xc)
+            iteration_group.create_dataset('yc', data=yc)
+            iteration_group.create_dataset('a_fit', data=a_fit)
+            iteration_group.create_dataset('b_fit', data=b_fit)
+            iteration_group.create_dataset('theta', data=theta)
+            # Psi Calculations - cylinder
+            iteration_group.create_dataset('x_cloverce', data=x_ce)
+            iteration_group.create_dataset('vx_cloverce', data=vx_ce)
+            iteration_group.create_dataset('y_cloverce', data=y_ce)
+            iteration_group.create_dataset('vy_cloverce', data=vy_ce)
+            iteration_group.create_dataset('psi_0', data=psi_0)
+            iteration_group.create_dataset('psi_1', data=psi_1)
+            iteration_group.create_dataset('r_cyl', data=r_cyl)
 
             #-------------External LOG------------------
             # Create a group to store velocity field for this iteration/time
