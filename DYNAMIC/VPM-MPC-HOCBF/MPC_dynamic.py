@@ -85,6 +85,8 @@ YawC = []
 xdispf=[]
 ydispf=[]
 # readings obstacle (for the cylinder)
+xac = []
+yac = []
 xa = []
 ya = []
 # obstacle readings (for the prism)
@@ -185,14 +187,14 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
     class ellipse:
 
-        def ellipse_calc(self,xa,ya, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe):
+        def ellipse_calc(self,xac,yac, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe):
 
         # Because the ellipse estimation is too computationally expensive for this VM 
         # for real time estimation, we will use it for offline ellipse estimation
         # (wont be able to do this for hardware)
 
             #--------------Obstacle parameters-----------------------------
-            self.SF = 0.8 # safety factor distance from the obstcle (set as the width of the Clover)
+            self.SF = 1.0 # safety factor distance from the obstcle (set as the width of the Clover)
             self.SFp = 1.2 # safety factor for prism
             self.cyl_rad = 1.5 # [m] radius of the cylinder
             self.rec_rad = 1.25 # [m] half of the longest side of the prism
@@ -203,6 +205,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
             # Iterate over rows of data (for the prism)
             for i, (xa_row, ya_row) in enumerate(zip(xap, yap)):
+                
                 # Ellipse model-------------------------
                 xy = np.column_stack((xa_row, ya_row))
                 ellipse_model = EllipseModel()
@@ -210,11 +213,6 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
                 # If ellipse_model.params is None, skip this iteration
                 if ellipse_model.params is None:
-                    continue
-
-                if ellipse_model.params[0] <= 11.5 - 1.25 or ellipse_model.params[0] >= 11.5 + 1.25:
-                    continue
-                if ellipse_model.params[1] <= 15.2 - 1.25 or ellipse_model.params[1] >= 15.2 + 1.25:
                     continue
 
                 #----------- Calculate delta_p, delta_v, and delta_a-----------------------------------
@@ -226,10 +224,10 @@ with h5py.File(absolute_file_path, 'a') as hf:
                 norm_delta_v = np.linalg.norm(delta_v, ord=2)  # Euclidean norm
 
                 # constants
-                q1 = 12#15
-                q2 = 9#10
+                q1 = 15#15
+                q2 = 10#10
                 #print(max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8)) # woow, some pretty unstacle shapes come out of this on the prism
-                r = self.SFp + self.rec_rad #max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8) # make sure it is at least giving 0.8, where the max prism radius is 1.25 i believe
+                r = self.SFp + max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8) # make sure it is at least giving 0.8, where the max prism radius is 1.25 i believe
 
                 self.psi_0p = norm_delta_p - r
                 self.psi_1p = (np.dot(delta_p, delta_v)) / norm_delta_p + q1*(self.psi_0p)
@@ -246,7 +244,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
                 #--------------------------------------------------------------------------------------------
             # Iterate over rows of data (for the cylinder)
-            for i, (xa_row, ya_row) in enumerate(zip(xa, ya)):#, x_ce, vx_ce, y_ce, vy_ce):
+            for i, (xa_row, ya_row) in enumerate(zip(xac, yac)):#, x_ce, vx_ce, y_ce, vy_ce):
                 # Ellipse model-------------------------
                 xy = np.column_stack((xa_row, ya_row))
                 ellipse_model = EllipseModel()
@@ -276,7 +274,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
                 psi_1.append(self.psi_1)
                 r_rec.append(r)
                 #--------------------------------------------------------------------------------------------
-
+              
 
                 # Extract parameters of the fitted ellipse
                 xc.append(ellipse_model.params[0])
@@ -284,6 +282,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
                 a_fit.append(ellipse_model.params[2])
                 b_fit.append(ellipse_model.params[3])
                 theta.append(ellipse_model.params[4])
+                
 
                 # Return lists of ellipse parameters for each row of data
             return xc, yc, a_fit, b_fit, theta, psi_0, psi_1
@@ -340,6 +339,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
             # Set a flag, that will be used as a logic operator to turn the velocity field updator on/off
             # depending on whether the object is detected or not
             self.object_detect = False
+            self.object_detect_control = False
             self.timer = None  # To store the timer object, this is used to turn the timer object off and on 
             self.velocity_update_started = False # This is used to avoid constantly trying to start the time at each iteration an object is detected
             # This flag will be used to determine which obstacle is coming next and what pose to send to the MPC solver ACADOS
@@ -354,7 +354,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
             self.v = 0
 
             # Define the max velocity allowed for the Clover
-            self.vel_max = 0.85 # [m/s]
+            self.vel_max = 0.65 # [m/s]
 
             # #-------------------- Offline Panel Calculations---------------------------------------------------
 
@@ -439,7 +439,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
             ny = self.nx + self.nu
 
             #--------------MPC Obstacle parameters-----------------------------
-            self.SF = 0.8 # safety factor distance from the obstcle (set as the width of the Clover)
+            self.SF = 1.0 # safety factor distance from the obstcle (set as the width of the Clover)
             self.cyl_rad = 1.5 # [m] radius of the cylinder
             # Center of the cylinder location for experiment
             self.x_cyl = 6.0
@@ -507,7 +507,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
             self.lidar = rospy.Subscriber('/ray_scan',LaserScan,self.lidar_read)
 
             # Subscribe to the observer estimation publishing:
-            self.AHOSMO = rospy.Subscriber('/AHOSMO_est', ObjectPub, self.AHOSMO_callback)
+            self.AHOSMO1 = rospy.Subscriber('/AHOSMO_est1', ObjectPub, self.AHOSMO_callback1)
+            self.AHOSMO2 = rospy.Subscriber('/AHOSMO_est2', ObjectPub, self.AHOSMO_callback2)
 
 
             #-----Define velocity field plot logging variables--------------
@@ -575,7 +576,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
             self.clover_pose = msg.pose[index]
 
-        def AHOSMO_callback(self, data):
+        def AHOSMO_callback1(self, data):
             # Probably need to set a condition when there are no estimations etc ( dont have to
             # this is already handles in the AHOSMO module, where estimations are only provided when something is detected
             # and if something isnt detected, the trivial case is publish in this script)
@@ -585,7 +586,19 @@ with h5py.File(absolute_file_path, 'a') as hf:
             self.obs_vy1 = data.vy
             self.obs_ax1 = data.ax
             self.obs_ay1 = data.ay
-            #print(data.x)
+            
+
+        def AHOSMO_callback2(self, data):
+            # Probably need to set a condition when there are no estimations etc ( dont have to
+            # this is already handles in the AHOSMO module, where estimations are only provided when something is detected
+            # and if something isnt detected, the trivial case is publish in this script)
+            self.obs_x2 = data.x
+            self.obs_y2 = data.y
+            self.obs_vx2 = data.vx
+            self.obs_vy2 = data.vy
+            self.obs_ax2 = data.ax
+            self.obs_ay2 = data.ay
+           
 
 
 
@@ -611,7 +624,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
             # Ensure there are actually lidar readings, no point in doing calculations if
             # nothing is detected:
             # Need to add a lidar detection threshold for panel method case (4), so if we have like 1-2 or low detection we could get singular matrix
-            if sum(not np.isinf(range_val) for range_val in self.obs_detect) >= 4 and z_clover >= 0.65: # want the drone to be at some altitude so we are not registering ground detections
+            if sum(not np.isinf(range_val) for range_val in self.obs_detect) >= 4 and z_clover >= 0.60: # want the drone to be at some altitude so we are not registering ground detections
             # if any(not np.isinf(range_val) for range_val in self.obs_detect):
 
                 # The angles and ranges start at -180 degrees i.e. at the right side, then go counter clockwise up to the top i.e. 180 degrees
@@ -701,23 +714,39 @@ with h5py.File(absolute_file_path, 'a') as hf:
                 self.readings_global = self.readings_global[:2,:].T
                 self.readings_global_orig = readings_global_orig[:2,:].T
 
+                # Update the lidar detection readings for logging below
+                self.xa_log = self.readings_global[:,0].T
+                self.ya_log = self.readings_global[:,1].T
+
+                self.xa_orig_log = self.readings_global_orig[:,0].T
+                self.ya_orig_log = self.readings_global_orig[:,1].T
+
+                # Filter out the inf values in the data point arrays
+                self.xa_log = self.xa_log[np.isfinite(self.xa_log)]
+                self.ya_log = self.ya_log[np.isfinite(self.ya_log)]
+                self.xa_orig_log = self.xa_orig_log[np.isfinite(self.xa_orig_log)]
+                self.ya_orig_log = self.ya_orig_log[np.isfinite(self.ya_orig_log)]
+
+
                 #-------------------Velocity field update logic----------------------------------
                 self.handle_object_detection() # start the velocity field updating now that an obstacle is detected
 
-                if not self.object_detect:
+                if not self.object_detect_control:
                     self.obstacle_counter +=1 # this only increments when an obstacle was detected once
                                         # so it will be equal to 1 for the cylinder and equal to 2 for the prism
-                    self.object_detect = True # Update object detected flag
-
-                # Log the Clover position and velocity at the same time we are logging this lidar data reading
+                    self.object_detect_control = True # Update object detected flag
+                    
+                
+                 # Log the Clover position and velocity at the same time we are logging this lidar data reading
                 # do this so we can calculate psi_0 and psi_1 based on the ellipse readings. Hopefully will calculate this
                 # in real time when we get to hardware in the lab
                 telem = get_telemetry(frame_id='map')
+               
                 # Append row after row of data (to log readings)
                 if self.obstacle_counter == 1:
                     # append the readings of the cylinder
-                    xa.append(self.xa.tolist())
-                    ya.append(self.ya.tolist())
+                    xac.append(self.xa_orig_log.tolist())
+                    yac.append(self.ya_orig_log.tolist())
                     x_ce.append(self.clover_pose.position.x) # current clover state of reading
                     vx_ce.append(telem.vx)
                     y_ce.append(self.clover_pose.position.y)
@@ -725,12 +754,12 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
                     # Log the lidar readings iteratively here for the cylinder
                     # Log obstacle detection for cylinder
-                    lidar_cylinder.create_dataset(f'xac_{self.lidar_timestamp}', data=self.xa)
-                    lidar_cylinder.create_dataset(f'yac_{self.lidar_timestamp}', data=self.ya)
+                    lidar_cylinder.create_dataset(f'xac_{self.lidar_timestamp}', data=self.xa_orig_log)
+                    lidar_cylinder.create_dataset(f'yac_{self.lidar_timestamp}', data=self.ya_orig_log)
                 else:
-                    # append the readings of the cylinder
-                    xap.append(self.xa.tolist())
-                    yap.append(self.ya.tolist())
+                    # append the readings of the second cylinder
+                    xap.append(self.xa_orig_log.tolist())
+                    yap.append(self.ya_orig_log.tolist())
                     x_pe.append(self.clover_pose.position.x)
                     vx_pe.append(telem.vx)
                     y_pe.append(self.clover_pose.position.y)
@@ -738,84 +767,100 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
                     # Log the lidar readings iteratively here for the prism
                     # Log obstacle detection for prism
-                    lidar_prism.create_dataset(f'xap_{self.lidar_timestamp}', data=self.xa)
-                    lidar_prism.create_dataset(f'yap_{self.lidar_timestamp}', data=self.ya)
+                    lidar_prism.create_dataset(f'xap_{self.lidar_timestamp}', data=self.xa_orig_log)
+                    lidar_prism.create_dataset(f'yap_{self.lidar_timestamp}', data=self.ya_orig_log)
 
 
-                # Update the current state of obstacle from the observer
-                x_cur = self.obs_x1
-                vx_cur = self.obs_vx1
-                ax_cur = self.obs_ax1
+                # if self.obstacle_counter ==1:
+                    
+                #     # Update the current state of obstacle from the observer
+                #     x_cur = self.obs_x1
+                #     vx_cur = self.obs_vx1
+                #     ax_cur = self.obs_ax1
 
-                y_cur = self.obs_y1
-                vy_cur = self.obs_vy1
-                ay_cur = self.obs_ay1
+                #     y_cur = self.obs_y1
+                #     vy_cur = self.obs_vy1
+                #     ay_cur = self.obs_ay1
+                # else:
+                   
+                #     # Update the current state of obstacle from the observer
+                #     x_cur = self.obs_x2
+                #     vx_cur = self.obs_vx2
+                #     ax_cur = self.obs_ax2
 
-                for j in range(self.N_horizon): # Up to N-1
-                    # An obstacle was detected, use the obstacle_counter number
-                    # to determine if it was the cylinder or the prism, and send on 
-                    # the values accordingly
-                    if self.obstacle_counter == 1:
-                        # This is the static cylinder, which has a radius of (1.5m??)
-                        # 	# Set the distance from the obstacle
-                        r = self.SF + self.cyl_rad
+                #     y_cur = self.obs_y2
+                #     vy_cur = self.obs_vy2
+                #     ay_cur = self.obs_ay2
 
-                        # Dynamic obstacle, will use simple linear kinematic equations for now:
-                        ax_est = ax_cur
-                        vx_est = vx_cur + ax_est*j*self.dt
-                        x_est = x_cur + vx_cur*j*self.dt + (1/2)*ax_est*(j*self.dt)**2
+                # for j in range(self.N_horizon): # Up to N-1
+                #     # An obstacle was detected, use the obstacle_counter number
+                #     # to determine if it was the cylinder or the prism, and send on 
+                #     # the values accordingly
+                #     if self.obstacle_counter == 1:
+                #         # This is the static cylinder, which has a radius of (1.5m??)
+                #         # 	# Set the distance from the obstacle
+                #         r = self.SF + self.cyl_rad
 
-                        ay_est = ay_cur
-                        vy_est = vy_cur + ay_est*j*self.dt
-                        y_est = y_cur + vy_cur*j*self.dt + (1/2)*ay_est*(j*self.dt)**2
+                #         # Dynamic obstacle, will use simple linear kinematic equations for now:
+                #         ax_est = ax_cur
+                #         vx_est = vx_cur + ax_est*j*self.dt
+                #         x_est = x_cur + vx_cur*j*self.dt + (1/2)*ax_est*(j*self.dt)**2
 
-                        self.acados_solver.set(j, "p", np.array([x_est,vx_est,ax_est,y_est,vy_est,ay_est, r])) # set the obstacle dynamics [x,vx,ax,y,vy,ay] dynamic obstacle
+                #         ay_est = ay_cur
+                #         vy_est = vy_cur + ay_est*j*self.dt
+                #         y_est = y_cur + vy_cur*j*self.dt + (1/2)*ay_est*(j*self.dt)**2
 
-                        # self.acados_solver.set(j, "p", np.array([self.x_cyl,0,0,self.y_cyl,0,0,r])) # Assuming a static obstacle (xc,yc)
+                #         self.acados_solver.set(j, "p", np.array([x_est,vx_est,ax_est,y_est,vy_est,ay_est, r])) # set the obstacle dynamics [x,vx,ax,y,vy,ay] dynamic obstacle
 
-                    else:
-                        # This is the second obstacle, which has a radius of (1.25m??)
-                        # 	# Set the distance from the obstacle
+                #         # self.acados_solver.set(j, "p", np.array([self.x_cyl,0,0,self.y_cyl,0,0,r])) # Assuming a static obstacle (xc,yc)
 
-                        r = self.SFp + self.cyl_rad
+                #     else:
+                #         # This is the second obstacle, which has a radius of (1.25m??)
+                #         # 	# Set the distance from the obstacle
+                      
 
-                        # Dynamic obstacle, will use simple linear kinematic equations for now:
-                        ax_est = ax_cur
-                        vx_est = vx_cur + ax_est*j*self.dt
-                        x_est = x_cur + vx_cur*j*self.dt + (1/2)*ax_est*(j*self.dt)**2
+                #         r = self.SF + self.cyl_rad
 
-                        ay_est = ay_cur
-                        vy_est = vy_cur + ay_est*j*self.dt
-                        y_est = y_cur + vy_cur*j*self.dt + (1/2)*ay_est*(j*self.dt)**2
+                #         # Dynamic obstacle, will use simple linear kinematic equations for now:
+                #         ax_est = ax_cur
+                #         vx_est = vx_cur + ax_est*j*self.dt
+                #         x_est = x_cur + vx_cur*j*self.dt + (1/2)*ax_est*(j*self.dt)**2
 
-                        self.acados_solver.set(j, "p", np.array([x_est,vx_est,ax_est,y_est,vy_est,ay_est,r])) # set the obstacle dynamics [x,vx,ax,y,vy,ay] dynamic obstacle
+                #         ay_est = ay_cur
+                #         vy_est = vy_cur + ay_est*j*self.dt
+                #         y_est = y_cur + vy_cur*j*self.dt + (1/2)*ay_est*(j*self.dt)**2
 
-                        # self.acados_solver.set(j, "p", np.array([self.x_rec,0,0,self.y_rec,0,0,r])) # Assuming a static obstacle (xc,yc)
+                #         self.acados_solver.set(j, "p", np.array([x_est,vx_est,ax_est,y_est,vy_est,ay_est,r])) # set the obstacle dynamics [x,vx,ax,y,vy,ay] dynamic obstacle
 
-                if self.obstacle_counter == 1:
-                    self.acados_solver.set(self.N_horizon, "p", np.array([x_cur,0,0,y_cur,0,0,r])) # Assuming a static obstacle (xc,yc)
-                else:
-                    self.acados_solver.set(self.N_horizon, "p", np.array([x_cur,0,0,y_cur,0,0,r])) # Assuming a static obstacle (xc,yc)
+                #         # self.acados_solver.set(j, "p", np.array([self.x_rec,0,0,self.y_rec,0,0,r])) # Assuming a static obstacle (xc,yc)
+
+                # if self.obstacle_counter == 1:
+                #     self.acados_solver.set(self.N_horizon, "p", np.array([x_cur,0,0,y_cur,0,0,r])) # Assuming a static obstacle (xc,yc)
+                # else:
+                #     self.acados_solver.set(self.N_horizon, "p", np.array([x_cur,0,0,y_cur,0,0,r])) # Assuming a static obstacle (xc,yc)
 					
 
             else:
 
+                self.object_detect_control = False
+               
+               
                 self.handle_object_loss() # We handle the case where the lidar detect is not happening or doesnt verify the 
                 # requirements for the above if statement, in this function, if an object has not been detected yet, it will be skipped,
                 # if an object was detected and lost, it will activate the logic inside
 
-                for j in range(self.N_horizon): # Up to N-1
-                    # an obstacle was not detected, so set the
-                    # 	# constraint condition to a trivial case
+                # for j in range(self.N_horizon): # Up to N-1
+                #     # an obstacle was not detected, so set the
+                #     # 	# constraint condition to a trivial case
 
-                    # 	# Set the distance from the obstacle
-                    r = 2.5
+                #     # 	# Set the distance from the obstacle
+                #     r = 2.5
 
-                    # 	# self.acados_solver.set(j, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
-                    self.acados_solver.set(j, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
+                #     # 	# self.acados_solver.set(j, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
+                #     self.acados_solver.set(j, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
 
-                # 	# self.acados_solver.set(self.N_horizon, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
-                self.acados_solver.set(self.N_horizon, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
+                # # 	# self.acados_solver.set(self.N_horizon, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
+                # self.acados_solver.set(self.N_horizon, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
 
 
             
@@ -838,7 +883,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
             if not self.object_detect:
                 # Object detected for the first time
                 self.object_detect = True
-                self.start_velocity_update()
+                # self.start_velocity_update()
                 # Object was previously detected, no need to take further action
 
         def handle_object_loss(self):
@@ -864,6 +909,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 
                 self.object_detect = False
+                
                 self.stop_velocity_update()
                 # Recalculate velocity field for the case without an obstacle
                 # An object was not detected yet, so use the source and sink for velocity based navigation
@@ -932,6 +978,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
             # theta1 = np.linspace(270 * np.pi / 180, 135 * np.pi / 180, 30) # CCW rotation
             # self.xa = 9 + 1 * np.cos(theta1)
             # self.ya = 9 + 1 * np.sin(theta1)
+
 
 
             # Append row after row of data (to log readings)
@@ -1230,6 +1277,84 @@ with h5py.File(absolute_file_path, 'a') as hf:
                 # PositionTarget::IGNORE_AFY +
                 # PositionTarget::IGNORE_AFZ +
                 # PositionTarget::IGNORE_YAW;
+
+                if self.object_detect_control:
+                    print(self.obstacle_counter)
+                   
+                    if self.obstacle_counter ==1:
+                        
+                        # Update the current state of obstacle from the observer
+                        x_cur = self.obs_x1
+                        vx_cur = self.obs_vx1
+                        ax_cur = self.obs_ax1
+
+                        y_cur = self.obs_y1
+                        vy_cur = self.obs_vy1
+                        ay_cur = self.obs_ay1
+                    else:
+
+                        # Update the current state of obstacle from the observer
+                        print('up')
+                        x_cur = self.obs_x2
+                        vx_cur = self.obs_vx2
+                        ax_cur = self.obs_ax2
+                        print(x_cur)
+                        y_cur = self.obs_y2
+                        vy_cur = self.obs_vy2
+                        ay_cur = self.obs_ay2
+
+                    for j in range(self.N_horizon): # Up to N-1
+                        # An obstacle was detected, use the obstacle_counter number
+                        # to determine if it was the cylinder or the prism, and send on 
+                        # the values accordingly
+                        if self.obstacle_counter == 1:
+                            # This is the static cylinder, which has a radius of (1.5m??)
+                            # 	# Set the distance from the obstacle
+                            r = self.SF + self.cyl_rad
+
+                            # Dynamic obstacle, will use simple linear kinematic equations for now:
+                            ax_est = ax_cur
+                            vx_est = vx_cur + ax_est*j*self.dt
+                            x_est = x_cur + vx_cur*j*self.dt + (1/2)*ax_est*(j*self.dt)**2
+
+                            ay_est = ay_cur
+                            vy_est = vy_cur + ay_est*j*self.dt
+                            y_est = y_cur + vy_cur*j*self.dt + (1/2)*ay_est*(j*self.dt)**2
+
+                            
+                            # self.acados_solver.set(j, "p", np.array([x_est,vx_est,ax_est,y_est,vy_est,ay_est, r])) # set the obstacle dynamics [x,vx,ax,y,vy,ay] dynamic obstacle
+
+                            # self.acados_solver.set(j, "p", np.array([self.x_cyl,0,0,self.y_cyl,0,0,r])) # Assuming a static obstacle (xc,yc)
+
+                        else:
+                            # This is the second obstacle, which has a radius of (1.25m??)
+                            # 	# Set the distance from the obstacle
+
+                            r = self.SF + self.cyl_rad
+
+                            # Dynamic obstacle, will use simple linear kinematic equations for now:
+                            ax_est = ax_cur
+                            vx_est = vx_cur + ax_est*j*self.dt
+                            x_est = x_cur + vx_cur*j*self.dt + (1/2)*ax_est*(j*self.dt)**2
+
+                            ay_est = ay_cur
+                            vy_est = vy_cur + ay_est*j*self.dt
+                            y_est = y_cur + vy_cur*j*self.dt + (1/2)*ay_est*(j*self.dt)**2
+
+                            self.acados_solver.set(j, "p", np.array([x_est,vx_est,ax_est,y_est,vy_est,ay_est,r])) # set the obstacle dynamics [x,vx,ax,y,vy,ay] dynamic obstacle
+
+                    # self.acados_solver.set(j, "p", np.array([self.x_rec,0,0,self.y_rec,0,0,r])) # Assuming a static obstacle (xc,yc)
+                else:
+                    for j in range(self.N_horizon): # Up to N-1
+                        # an obstacle was not detected, so set the
+                        # 	# constraint condition to a trivial case
+
+                        # 	# Set the distance from the obstacle
+                        r = 2.5
+
+                        # 	# self.acados_solver.set(j, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
+                        self.acados_solver.set(j, "p", np.array([40,0,0,40,0,0, r])) # Assuming a static obstacle
+
                 
 
                 # update reference
@@ -1369,8 +1494,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
             w = ellipse()
 
-            xc, yc, a_fit, b_fit, theta, psi_0, psi_1 = w.ellipse_calc(xa,ya, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe)
-
+            xc, yc, a_fit, b_fit, theta, psi_0, psi_1 = w.ellipse_calc(xac,yac, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe)
+            
 
 
             #-------------External LOG------------------
@@ -1413,7 +1538,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
             iteration_group.create_dataset('r_cyl', data=r_cyl)
 
             #-------------External LOG------------------
-            # Create a group to store velocity field for this iteration/time
+            # Create a group to store the control variables over the simulation
             iteration_group = hf.create_group('Control_log')
             iteration_group.create_dataset('x_clover', data=xf)
             iteration_group.create_dataset('y_clover', data=yf)
@@ -1424,6 +1549,10 @@ with h5py.File(absolute_file_path, 'a') as hf:
             iteration_group.create_dataset('vely_clover', data=velfy)
             iteration_group.create_dataset('velx_com', data=velcx)
             iteration_group.create_dataset('vely_com', data=velcy)
+            iteration_group.create_dataset('Ux_mpc', data=Ux)
+            iteration_group.create_dataset('Uy_mpc', data=Uy)
+            iteration_group.create_dataset('Uz_mpc', data=Uz)
+
             #time_now = np.array(time_now)
             iteration_group.create_dataset('time_now', data=time_now)
                 #------------------------------------------
@@ -1457,9 +1586,13 @@ with h5py.File(absolute_file_path, 'a') as hf:
             # Plot logged data for analyses and debugging
             plt.figure(1)
             plt.subplot(211)
-            plt.plot(xf,yf,'r',label='x-fol')
-            #plt.plot(xa,'b--',label='x-obs')
-            plt.fill(xa[0],ya[0],'k') # plot first reading
+            plt.plot(xf,yf,'r',label='pos-clover')
+            plt.plot(xcom,ycom,'b',label='MPC-com')
+            ellipse = Ellipse(xy=(xc[0],yc[0]), width=2*a_fit[0], height=2*b_fit[0], angle=np.rad2deg(theta[0]),
+            edgecolor='b', fc='None', lw=2)
+            plt.gca().add_patch(ellipse)
+            # plt.plot(self.posx,self.posy,'b--',label='x-com')
+            # plt.fill(xa[0],ya[0],'k') # plot first reading
             plt.legend()
             plt.grid(True)
             #plt.subplot(312)
@@ -1475,29 +1608,32 @@ with h5py.File(absolute_file_path, 'a') as hf:
             plt.grid(True)
             plt.ylabel('yaw [deg]')
             plt.xlabel('Time [s]')
+			
             
             # Velocity plot
             plt.figure(2)
-            plt.subplot(311)
+            plt.subplot(211)
             plt.plot(velfx,'r',label='vx-vel')
-            plt.plot(velcx,'b',label='vx-com')
+            plt.plot(velcx,'b',label='vx-MPC-com')
+            plt.plot(uVPM,'g',label='vx-VPM')
             plt.ylabel('vel[m/s]')
             plt.xlabel('Time [s]')
             plt.legend()
             plt.grid(True)
-            plt.subplot(312)
+            plt.subplot(212)
             plt.plot(velfy,'r',label='vy-vel')
-            plt.plot(velcy,'b--',label='vy-com')
+            plt.plot(velcy,'b--',label='vy-MPC-com')
+            plt.plot(vVPM,'g',label='vy-VPM')
             plt.legend()
             plt.grid(True)
             plt.ylabel('Position [m]')
-            plt.subplot(313)
-            plt.plot(evx,'r',label='evx')
-            plt.plot(evy,'b',label='evy')
-            plt.plot(eyaw,'g',label='eyaw')
-            plt.ylabel('Error[m]')
-            plt.xlabel('Time [s]')
-            plt.legend()
+            # plt.subplot(313)
+            # plt.plot(evx,'r',label='evx')
+            # plt.plot(evy,'b',label='evy')
+            # plt.plot(eyaw,'g',label='eyaw')
+            # plt.ylabel('Error[m]')
+            # plt.xlabel('Time [s]')
+            # plt.legend()
             plt.grid(True)
 
             plt.figure(3)
@@ -1508,47 +1644,54 @@ with h5py.File(absolute_file_path, 'a') as hf:
             plt.legend()
             
 
-            fig = plt.figure(4)
-            plt.cla()
-            np.seterr(under="ignore")
-            plt.streamplot(x_field,y_field,u_field,v_field,linewidth=1.0,density=40,color='r',arrowstyle='-',start_points=XYsl) # density = 40
-            plt.grid(True)
-            #plt.plot(XX,YY,marker='o',color='blue')
-            plt.axis('equal')
-            plt.xlim(xVals)
-            plt.ylim(yVals)
-            plt.plot(lidar_x, lidar_y,'-o' ,color = 'k',linewidth = 0.25)
-            plt.plot(xf,yf,'b',label='x-fol') # path taken by clover
-            plt.plot(trail_x, trail_y, 'o')
-            plt.xlabel('X Units')
-            plt.ylabel('Y Units')
-            plt.title('Streamlines with Stream Function Velocity Equations')
+            # fig = plt.figure(4)
+            # plt.cla()
+            # np.seterr(under="ignore")
+            # plt.streamplot(x_field,y_field,u_field,v_field,linewidth=1.0,density=40,color='r',arrowstyle='-',start_points=XYsl) # density = 40
+            # plt.grid(True)
+            # #plt.plot(XX,YY,marker='o',color='blue')
+            # plt.axis('equal')
+            # plt.xlim(xVals)
+            # plt.ylim(yVals)
+            # plt.plot(lidar_x, lidar_y,'-o' ,color = 'k',linewidth = 0.25)
+            # plt.plot(xf,yf,'b',label='x-fol') # path taken by clover
+            # ellipse = Ellipse(xy=(xc[0],yc[0]), width=2*a_fit[0], height=2*b_fit[0], angle=np.rad2deg(theta[0]),
+            # edgecolor='b', fc='None', lw=2)
+            # plt.gca().add_patch(ellipse)
+            # plt.xlabel('X Units')
+            # plt.ylabel('Y Units')
+            # plt.title('Streamlines with Stream Function Velocity Equations')
 
             plt.figure(5)
-            plt.scatter(x_field,y_field,color = 'blue', label='data-points')
-            plt.xlabel('x-data')
-            plt.ylabel('y-data')
-            plt.grid(True)
+            plt.plot(psi_0,'r',label='psi_0')
+            plt.plot(psi_1,'b',label='psi_1')
+            plt.ylabel('b(x)')
+            plt.xlabel('Time [s]')
             plt.legend()
+            plt.grid(True)
 
-            # Plot the airfoil
             plt.figure(6)
-            plt.plot(lidar_x, lidar_y, 'ko-')
-            plt.plot(trail_x, trail_y, 'o')
-            plt.xlim() #auto
-            plt.ylim() # auto
-            plt.xlabel('X Units')
-            plt.ylabel('Y Units')
-            plt.title('Airfoil')
-            plt.axis('equal')
+            plt.plot(xc, yc, 'ro', label='ellipse-center', markersize=3)  # 'ro' for red circles
+            plt.ylabel('center[m]')
+            plt.xlabel('Time [s]')
+            plt.legend()
             plt.grid(True)
 
             plt.figure(7)
-            plt.scatter(u_field,v_field,color = 'blue', label='data-points')
-            plt.xlabel('vx-data')
-            plt.ylabel('vy-data')
-            plt.grid(True)
+            plt.plot(psi_0p,'r',label='psi_0p')
+            plt.plot(psi_1p,'b',label='psi_1p')
+            plt.ylim(-2, 30)
+            plt.ylabel('b(x)')
+            plt.xlabel('Time [s]')
             plt.legend()
+            plt.grid(True)
+
+            plt.figure(8)
+            plt.plot(xcp, ycp, 'ro', label='ellipse-center', markersize=3)  # 'ro' for red circles
+            plt.ylabel('center[m]')
+            plt.xlabel('Time [s]')
+            plt.legend()
+            plt.grid(True)
 
 
             

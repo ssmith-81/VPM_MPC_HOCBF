@@ -79,9 +79,19 @@ vyc = []
 axc = []
 ayc = []
 
+# Analyze observer for obstacle 1
+x_obs=[]
+vx_obs=[]
+ax_obs=[]
+
+y_obs=[]
+vy_obs=[]
+ay_obs=[]
+
 
 # Log the time for the position control variables
 time_now = []
+time_obs = []
 
 # Get the path to the directory containing the Python script
 script_dir = os.path.dirname(os.path.realpath(__file__))
@@ -112,6 +122,9 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			self.obstacle_dynamics_pub = rospy.Publisher('/Obstacle_state1', ObjectPub, queue_size=10)
 			self.obstacle_dynamics_pub2 = rospy.Publisher('/Obstacle_state2', ObjectPub, queue_size=10)
 
+			# Create ROS publishers for each model state
+			self.state_pub_8_publish = rospy.Publisher('/gazebo/set_model_state', ModelState, queue_size=10)
+
 			# MPC variables
 			self.N_horizon = N_horizon # Define prediction horizone in terms of optimization intervals
 			self.T_horizon = T_horizon # Define the prediction horizon in terms of time (s) --> Limits time and improves efficiency
@@ -135,6 +148,33 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 			self.current_state = State()
 			self.rate = rospy.Rate(20)
+
+			# Define the observer variables
+			self.x1hat_cur = 0
+			self.x2hat_cur = 0
+			self.x3hat_cur = 0
+			self.x4hat_cur = 0
+
+			self.y1hat_cur = 0
+			self.y2hat_cur = 0
+			self.y3hat_cur = 0
+			self.y4hat_cur = 0
+
+			# Define the observer variables
+			self.x1hat_cur2 = 0
+			self.x2hat_cur2 = 0
+			self.x3hat_cur2 = 0
+			
+			self.y1hat_cur2 = 0
+			self.y2hat_cur2 = 0
+			self.y3hat_cur2 = 0
+			
+			self.last_timestamp = None # make sure there is a timestamp
+
+			# Create a topic to publish the estimated obstacle dynamics on, from the observer
+			# Create a publisher for the obstacle dynamics topic
+			self.obstacle_dynamics_pub1 = rospy.Publisher('/AHOSMO_est1', ObjectPub, queue_size=10)
+			self.obstacle_dynamics_pub2 = rospy.Publisher('/AHOSMO_est2', ObjectPub, queue_size=10)
 			
 
 		def main(self):
@@ -285,6 +325,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			# define obstacle state objects for publishing them (this will be read by the AHOSMO)
 			state_pub1 = ObjectPub()
 			state_pub2 = ObjectPub()
+			obs_pub1 = ObjectPub()
+			obs_pub2 = ObjectPub()
 			while not rospy.is_shutdown():
 				
 				# Update the position of the object (figure-8)
@@ -305,8 +347,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				state_pub1.ay = afy[k]
 
 				# Update the position of the object (circle)
-				state_msg_circle.pose.position.x = posx2[q]
-				state_msg_circle.pose.position.y = posy2[q]
+				state_msg_circle.pose.position.x = 11.5#posx2[q]
+				state_msg_circle.pose.position.y = 15.2#posy2[q]
 				state_msg_circle.pose.position.z = posz2[q]
 				state_msg_circle.pose.orientation.x = 0
 				state_msg_circle.pose.orientation.y = 0
@@ -346,16 +388,134 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 								
 				# Set the obstacles state
-				figure_8 = set_state( state_msg_8 )
+				#figure_8 = set_state( state_msg_8 )
+				self.state_pub_8_publish.publish(state_msg_8)  # Publish the state for the big box 2
 
 				circle = set_state(state_msg_circle)
 
 				# Publish the obstacles state for the AHOSMO
 				self.obstacle_dynamics_pub.publish(state_pub1)
 				self.obstacle_dynamics_pub2.publish(state_pub2)
+
+				# Test the waters with observer the entire time---------------------------------------------------------
+
+				# Retrieve the current timestamp in seconds
+				current_timestamp = rospy.Time.now()
+				current_timestamp = current_timestamp.to_sec()
+
+				if self.last_timestamp is not None:
+
+					# Calculate the change in time since the last time step (this is needed
+					# for euler integration within this funcion)
+					dt = current_timestamp - self.last_timestamp
+
+					# Temporary constant gains
+					L1 = 15 # 20,15
+					L2 = 13 # 30,15
+					L3 = 6 # 15,7
+					L4 = 15
+
+					# Update the observer for the x-dynamic direction
+					# second order differntiator
+					x1hat = self.x1hat_cur + dt*(self.x2hat_cur + L1*(abs(posx[k] - self.x1hat_cur)**(2/3))*np.sign(posx[k]-self.x1hat_cur))
+					x2hat = self.x2hat_cur + dt*(self.x3hat_cur + L2*(abs(posx[k] - self.x1hat_cur)**(1/3))*np.sign(posx[k]-self.x1hat_cur))
+					x3hat = self.x3hat_cur + dt*(L3*np.sign(posx[k]-self.x1hat_cur))
+					# third order differntiator
+					# x1hat = self.x1hat_cur + dt*(self.x2hat_cur + L1*(abs(center[0] - self.x1hat_cur)**(3/4))*np.sign(center[0]-self.x1hat_cur))
+					# x2hat = self.x2hat_cur + dt*(self.x3hat_cur + L2*(abs(center[0] - self.x1hat_cur)**(2/4))*np.sign(center[0]-self.x1hat_cur))
+					# x3hat = self.x3hat_cur + dt*(self.x4hat_cur + L3*(abs(center[0] - self.x1hat_cur)**(1/4))*np.sign(center[0]-self.x1hat_cur))
+					# x4hat = self.x4hat_cur + dt*(L4*np.sign(center[0]-self.x1hat_cur))
+
+					# Update the observer for the x-dynamic direction
+					# second order differnetiator
+					y1hat = self.y1hat_cur + dt*(self.y2hat_cur + L1*(abs(posy[k] - self.y1hat_cur)**(2/3))*np.sign(posy[k] -self.y1hat_cur))
+					y2hat = self.y2hat_cur + dt*(self.y3hat_cur + L2*(abs(posy[k]  - self.y1hat_cur)**(1/3))*np.sign(posy[k] -self.y1hat_cur))
+					y3hat = self.y3hat_cur + dt*(L3*np.sign(posy[k] -self.y1hat_cur))
+					
+
+					x_obs.append(x1hat)
+					vx_obs.append(x2hat)
+					ax_obs.append(x3hat)
+					y_obs.append(y1hat)
+					vy_obs.append(y2hat)
+					ay_obs.append(y3hat)
+					# Get the actual time:
+					current_time = rospy.Time.now()
+					time_obs.append(current_time.to_sec())
+
+					# Publish state estimation to the main node file for use in the MPC
+					obs_pub1.x = posx[k] # send in the actual position values to the main script, not the estimation
+					obs_pub1.y = posy[k] 
+					# feed observer estimations
+					# self.AHOSMO.vx = x2hat
+					# self.AHOSMO.vy = y2hat
+					# self.AHOSMO.ax = x3hat
+					# self.AHOSMO.ay = y3hat
+					# feed actual dynamics
+					obs_pub1.vx = 0#velx[k]
+					obs_pub1.vy = 0#vely[k]
+					obs_pub1.ax = 0#afx[k]
+					obs_pub1.ay = 0#afy[k]
+
+					# Update the observer for the x-dynamic direction
+					# second order differntiator
+					x1hat2 = self.x1hat_cur2 + dt*(self.x2hat_cur2 + L1*(abs(posx2[q] - self.x1hat_cur2)**(2/3))*np.sign(posx2[q]-self.x1hat_cur2))
+					x2hat2 = self.x2hat_cur2 + dt*(self.x3hat_cur2 + L2*(abs(posx2[q] - self.x1hat_cur2)**(1/3))*np.sign(posx2[q]-self.x1hat_cur2))
+					x3hat2 = self.x3hat_cur2 + dt*(L3*np.sign(posx2[q]-self.x1hat_cur2))
+
+					# Update the observer for the x-dynamic direction
+					# second order differnetiator
+					y1hat2 = self.y1hat_cur2 + dt*(self.y2hat_cur2 + L1*(abs(posy2[q] - self.y1hat_cur2)**(2/3))*np.sign(posy2[q] -self.y1hat_cur2))
+					y2hat2 = self.y2hat_cur2 + dt*(self.y3hat_cur2 + L2*(abs(posy2[q]  - self.y1hat_cur2)**(1/3))*np.sign(posy2[q] -self.y1hat_cur2))
+					y3hat2 = self.y3hat_cur2 + dt*(L3*np.sign(posy2[q] -self.y1hat_cur2))
+
+					# Publish state estimation to the main node file for use in the MPC
+					obs_pub2.x = 11.5#posx2[q] # send in the actual position values to the main script, not the estimation
+					obs_pub2.y = 15.2#posy2[q] 
+					# feed observer estimations
+					# self.AHOSMO.vx = x2hat
+					# self.AHOSMO.vy = y2hat
+					# self.AHOSMO.ax = x3hat
+					# self.AHOSMO.ay = y3hat
+					# feed actual dynamics
+					obs_pub2.vx = 0#velx2[q]
+					obs_pub2.vy = 0#vely2[q]
+					obs_pub2.ax = 0#afx2[q]
+					obs_pub2.ay = 0#afy2[q]
+					
+					
 			
 				
-			
+				# Update current values
+					self.x1hat_cur = x1hat
+					self.x2hat_cur = x2hat
+					self.x3hat_cur = x3hat
+					# self.x4hat_cur = x4hat
+
+					self.y1hat_cur = y1hat
+					self.y2hat_cur = y2hat
+					self.y3hat_cur = y3hat
+					# self.y4hat_cur = y4hat
+
+					# Update current values
+					self.x1hat_cur2 = x1hat2
+					self.x2hat_cur2 = x2hat2
+					self.x3hat_cur2 = x3hat2
+					# self.x4hat_cur = x4hat
+
+					self.y1hat_cur2 = y1hat2
+					self.y2hat_cur2 = y2hat2
+					self.y3hat_cur2 = y3hat2
+					# self.y4hat_cur = y4hat
+
+					self.obstacle_dynamics_pub1.publish(obs_pub1)
+					self.obstacle_dynamics_pub2.publish(obs_pub2)
+
+
+					
+
+				# update last_timestamp to current timestamp
+				self.last_timestamp = current_timestamp
 			
 				# This loop initializes when the figure-8 is complete, therefore it will navigate back to the origin and setpoint publishing will be continued as needed to avoid entering failsafe mode.
 				k = k+1
@@ -370,6 +530,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				if math.sqrt((telem.x-self.xsi) ** 2 + (telem.y-self.ysi) ** 2) < 0.6: # 0.4
 					break
 				rr.sleep()
+				# rospy.spin()
 
 			# Wait for 3 seconds
 			rospy.sleep(3)
@@ -384,7 +545,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 	if __name__ == '__main__':
 		try:
 			# Define the performance parameters here which starts the script
-			q=clover(FLIGHT_ALTITUDE = 1.749502, RATE = 50, RADIUS = 3.3, CYCLE_S = 25, REF_FRAME = 'aruco_map', N_horizon = 25, T_horizon = 5)
+			q=clover(FLIGHT_ALTITUDE = 1.749502, RATE = 50, RADIUS = 1.4, CYCLE_S = 10, REF_FRAME = 'aruco_map', N_horizon = 25, T_horizon = 5) # cycle = 25for slow obstacle radius = 3.3
 			
 			q.main()
 
@@ -413,12 +574,14 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			plt.figure(8)
 			plt.subplot(211)
 			plt.plot(time_now,xf,'r',label='x-pos')
+			plt.plot(time_obs,x_obs,'g',label='x-obs')
 			plt.plot(time_now,yf,'b--',label='y-pos')
 			plt.legend()
 			plt.grid(True)
 			plt.ylabel('Position [m]')
 			plt.subplot(212)
 			plt.plot(time_now,vxf,'r',label='x-vel')
+			plt.plot(time_obs,vx_obs,'g',label='vx-obs')
 			plt.plot(time_now,vyf,'b--',label='y-vel')
 			plt.legend()
 			plt.grid(True)
@@ -428,6 +591,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			plt.figure(9)
 			# plt.subplot(211)
 			plt.plot(time_now, axf,'r',label='x-acc')
+			plt.plot(time_obs,ax_obs,'g',label='ax-obs')
 			plt.plot(time_now, ayf,'b--',label='y-acc')
 			plt.ylabel('af [m/s^2]')
 			plt.legend()

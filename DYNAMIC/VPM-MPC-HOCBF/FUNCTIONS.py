@@ -152,8 +152,8 @@ def acados_settings(N_horizon, T_horizon):
 		ocp.constraints.Jsh = np.eye(1)
 
 		# # slacks
-		L2_pen = 1e4 # 1e3
-		L1_pen = 1e3  #1
+		L2_pen = 1e5 # 1e4
+		L1_pen = 1e4  #1e3
 
 		ocp.cost.Zl = L2_pen*np.ones((1,)) # Diagonal of hessian WRT lower slack
 		ocp.cost.Zu = L2_pen*np.ones((1,))
