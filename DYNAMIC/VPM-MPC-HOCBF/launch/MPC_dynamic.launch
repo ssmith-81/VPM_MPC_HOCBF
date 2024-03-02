@@ -1,0 +1,19 @@
+
+<launch>
+    <!-- Launch your first node -->
+    <node name="set_obstacle_dynamic" pkg="clover" type="set_object_state_MPC.py" output="screen"/>
+
+    <!-- Launch your second node -->
+   <!-- <node name="MPC_dynamic" pkg="clover" type="MPC_dynamic.py" output="screen"/>-->
+
+     <!-- Launch your second node -->
+    <node name="MPC_final" pkg="clover" type="MPC_dyn_final.py" output="screen"/>
+    
+     <!-- Launch your third node -->
+    <node name="groundtruth_pose" pkg="clover" type="groundtruth_pose.py" output="screen"/>
+    
+    <!-- Launch your fourth node -->
+   <!-- <node name="AHOSMO_node" pkg="clover" type="AHOSMO_lidar_ellipse_dynamic.py" output="screen"/>
+   -->
+</launch>
+
