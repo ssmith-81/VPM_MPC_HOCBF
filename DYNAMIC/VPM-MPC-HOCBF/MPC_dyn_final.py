@@ -13,6 +13,8 @@ from geometry_msgs.msg import Point, PoseStamped, TwistStamped
 from gazebo_msgs.msg import ModelState, LinkStates
 import tf
 from sensor_msgs.msg import Imu, LaserScan
+from clover_callback import long_callback
+
 
 from panel_functions import CLOVER_COMPONENTS, CLOVER_STREAM_GEOMETRIC_INTEGRAL, CLOVER_KUTTA, CLOVER_STREAMLINE, CLOVER_noOBSTACLE
 from scipy.interpolate import griddata
@@ -160,6 +162,108 @@ absolute_file_path = os.path.join(script_dir, file_name)
 
  # Open the HDF5 file for writing
 with h5py.File(absolute_file_path, 'a') as hf:
+
+	class ellipse:
+
+		def ellipse_calc(self,xac,yac, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe):
+
+			# Because the ellipse estimation is too computationally expensive for this VM 
+			# for real time estimation, we will use it for offline ellipse estimation
+			# (wont be able to do this for hardware)
+
+			#--------------Obstacle parameters-----------------------------
+			self.SF = 1.0 # safety factor distance from the obstcle (set as the width of the Clover)
+			self.SFp = 1.2 # safety factor for prism
+			self.cyl_rad = 1.5 # [m] radius of the cylinder
+			self.rec_rad = 1.25 # [m] half of the longest side of the prism
+
+			#--------------------------------------------------------------
+
+			# Doing the cylinder and prism seperately because the prism is giving straneg results on psi_1
+
+			# Iterate over rows of data (for the prism)
+			for i, (xa_row, ya_row) in enumerate(zip(xap, yap)):
+
+			# Ellipse model-------------------------
+				xy = np.column_stack((xa_row, ya_row))
+				ellipse_model = EllipseModel()
+				ellipse_model.estimate(xy)
+
+				# If ellipse_model.params is None, skip this iteration
+				if ellipse_model.params is None:
+					continue
+
+				#----------- Calculate delta_p, delta_v, and delta_a-----------------------------------
+				delta_p = np.array([x_pe[i]-ellipse_model.params[0], y_pe[i]-ellipse_model.params[1]])
+				delta_v = np.array([vx_pe[i]-0, vy_pe[i]-0]) # static obstacle assumption for now
+
+				# Calculate norms
+				norm_delta_p = np.linalg.norm(delta_p, ord=2)  # Euclidean norm
+				norm_delta_v = np.linalg.norm(delta_v, ord=2)  # Euclidean norm
+
+				# constants
+				q1 = 15#15
+				q2 = 10#10
+				#print(max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8)) # woow, some pretty unstacle shapes come out of this on the prism
+				r = self.SFp + max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8) # make sure it is at least giving 0.8, where the max prism radius is 1.25 i believe
+
+				self.psi_0p = norm_delta_p - r
+				self.psi_1p = (np.dot(delta_p, delta_v)) / norm_delta_p + q1*(self.psi_0p)
+
+				psi_0p.append(self.psi_0p)
+				psi_1p.append(self.psi_1p)
+				r_cyl.append(r)
+				# Extract parameters of the fitted ellipse
+				xcp.append(ellipse_model.params[0])
+				ycp.append(ellipse_model.params[1])
+				a_fitp.append(ellipse_model.params[2])
+				b_fitp.append(ellipse_model.params[3])
+				thetap.append(ellipse_model.params[4])
+
+			#--------------------------------------------------------------------------------------------
+			# Iterate over rows of data (for the cylinder)
+			for i, (xa_row, ya_row) in enumerate(zip(xac, yac)):#, x_ce, vx_ce, y_ce, vy_ce):
+				# Ellipse model-------------------------
+				xy = np.column_stack((xa_row, ya_row))
+				ellipse_model = EllipseModel()
+				ellipse_model.estimate(xy)
+
+				# If ellipse_model.params is None, skip this iteration
+				if ellipse_model.params is None:
+					continue
+
+				#----------- Calculate delta_p, delta_v, and delta_a-----------------------------------
+				delta_p = np.array([x_ce[i]-ellipse_model.params[0], y_ce[i]-ellipse_model.params[1]])
+				delta_v = np.array([vx_ce[i]-0, vy_ce[i]-0]) # static obstacle assumption for now
+
+				# Calculate norms
+				norm_delta_p = np.linalg.norm(delta_p, ord=2)  # Euclidean norm
+				norm_delta_v = np.linalg.norm(delta_v, ord=2)  # Euclidean norm
+
+				# constants
+				q1 = 12#15
+				q2 = 9#10
+				r = self.SF + max(ellipse_model.params[2], ellipse_model.params[3])
+
+				self.psi_0 = norm_delta_p - r
+				self.psi_1 = (np.dot(delta_p, delta_v)) / norm_delta_p + q1*(self.psi_0)
+
+				psi_0.append(self.psi_0)
+				psi_1.append(self.psi_1)
+				r_rec.append(r)
+				#--------------------------------------------------------------------------------------------
+
+
+				# Extract parameters of the fitted ellipse
+				xc.append(ellipse_model.params[0])
+				yc.append(ellipse_model.params[1])
+				a_fit.append(ellipse_model.params[2])
+				b_fit.append(ellipse_model.params[3])
+				theta.append(ellipse_model.params[4])
+
+
+			# Return lists of ellipse parameters for each row of data
+			return xc, yc, a_fit, b_fit, theta, psi_0, psi_1
 
 	lidar_prism = hf.create_group('Lidar_reading_prism')
 	lidar_cylinder = hf.create_group('Lidar_reading_cylinder')
@@ -502,8 +606,9 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			self.obs_ax2 = data.ax
 			self.obs_ay2 = data.ay
 
-
+		@long_callback
 		def lidar_read(self,data):
+			
 
 			# Read the current timestamp of the readings
 			self.lidar_timestamp = data.header.stamp.to_sec()
@@ -995,8 +1100,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				# logging/debugging
 				xf.append(x_clover)
 				yf.append(y_clover)
-				xcom.append(x8[0])
-				ycom.append(x8[2])
+				xcom.append(x0[0])
+				ycom.append(x0[2])
 				# evx.append(self.u-x_clover)
 				# evy.append(self.v-telem.vy)
 				eyaw.append(self.omega-yaw)
