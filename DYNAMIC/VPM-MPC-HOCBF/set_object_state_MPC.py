@@ -119,11 +119,12 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 			# Create a topic to publish the estimated obstacle dynamics on, from the observer
 		# Create a publisher for the obstacle dynamics topic
-			self.obstacle_dynamics_pub = rospy.Publisher('/Obstacle_state1', ObjectPub, queue_size=10)
-			self.obstacle_dynamics_pub2 = rospy.Publisher('/Obstacle_state2', ObjectPub, queue_size=10)
+			self.obstacle_dynamics_pub = rospy.Publisher('/Obstacle_state1', ObjectPub, queue_size=4)
+			self.obstacle_dynamics_pub2 = rospy.Publisher('/Obstacle_state2', ObjectPub, queue_size=4)
 
 			# Create ROS publishers for each model state
-			self.state_pub_8_publish = rospy.Publisher('/gazebo/set_model_state', ModelState, queue_size=10)
+			self.state_pub_8_publish = rospy.Publisher('/gazebo/set_model_state', ModelState, queue_size=3)
+			self.state_pub_circ_publish = rospy.Publisher('/gazebo/set_model_state', ModelState, queue_size=3)
 
 			# MPC variables
 			self.N_horizon = N_horizon # Define prediction horizone in terms of optimization intervals
@@ -173,8 +174,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 			# Create a topic to publish the estimated obstacle dynamics on, from the observer
 			# Create a publisher for the obstacle dynamics topic
-			self.obstacle_dynamics_pub1 = rospy.Publisher('/AHOSMO_est1', ObjectPub, queue_size=10)
-			self.obstacle_dynamics_pub2 = rospy.Publisher('/AHOSMO_est2', ObjectPub, queue_size=10)
+			self.observer_pub1 = rospy.Publisher('/AHOSMO_est1', ObjectPub, queue_size=2)
+			self.observer_pub2 = rospy.Publisher('/AHOSMO_est2', ObjectPub, queue_size=2)
 			
 
 		def main(self):
@@ -347,8 +348,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				state_pub1.ay = afy[k]
 
 				# Update the position of the object (circle)
-				state_msg_circle.pose.position.x = 11.5#posx2[q]
-				state_msg_circle.pose.position.y = 15.2#posy2[q]
+				state_msg_circle.pose.position.x = 16#posx2[q]
+				state_msg_circle.pose.position.y = 16#posy2[q]
 				state_msg_circle.pose.position.z = posz2[q]
 				state_msg_circle.pose.orientation.x = 0
 				state_msg_circle.pose.orientation.y = 0
@@ -391,7 +392,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				#figure_8 = set_state( state_msg_8 )
 				self.state_pub_8_publish.publish(state_msg_8)  # Publish the state for the big box 2
 
-				circle = set_state(state_msg_circle)
+				# circle = set_state(state_msg_circle)
+				self.state_pub_circ_publish.publish(state_msg_circle)
 
 				# Publish the obstacles state for the AHOSMO
 				self.obstacle_dynamics_pub.publish(state_pub1)
@@ -452,10 +454,10 @@ with h5py.File(absolute_file_path, 'a') as hf:
 					# self.AHOSMO.ax = x3hat
 					# self.AHOSMO.ay = y3hat
 					# feed actual dynamics
-					obs_pub1.vx = 0#velx[k]
-					obs_pub1.vy = 0#vely[k]
-					obs_pub1.ax = 0#afx[k]
-					obs_pub1.ay = 0#afy[k]
+					obs_pub1.vx = velx[k]
+					obs_pub1.vy = vely[k]
+					obs_pub1.ax = afx[k]
+					obs_pub1.ay = afy[k]
 
 					# Update the observer for the x-dynamic direction
 					# second order differntiator
@@ -470,8 +472,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 					y3hat2 = self.y3hat_cur2 + dt*(L3*np.sign(posy2[q] -self.y1hat_cur2))
 
 					# Publish state estimation to the main node file for use in the MPC
-					obs_pub2.x = 11.5#posx2[q] # send in the actual position values to the main script, not the estimation
-					obs_pub2.y = 15.2#posy2[q] 
+					obs_pub2.x = 16#posx2[q] # send in the actual position values to the main script, not the estimation
+					obs_pub2.y = 16#posy2[q] 
 					# feed observer estimations
 					# self.AHOSMO.vx = x2hat
 					# self.AHOSMO.vy = y2hat
@@ -508,8 +510,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 					self.y3hat_cur2 = y3hat2
 					# self.y4hat_cur = y4hat
 
-					self.obstacle_dynamics_pub1.publish(obs_pub1)
-					self.obstacle_dynamics_pub2.publish(obs_pub2)
+					self.observer_pub1.publish(obs_pub1)
+					self.observer_pub2.publish(obs_pub2)
 
 
 					

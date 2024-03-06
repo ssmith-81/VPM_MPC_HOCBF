@@ -89,7 +89,7 @@ xac = []
 yac = []
 xa = []
 ya = []
-# obstacle readings (for the prism)
+# obstacle readings (for the second cylinder)
 xap = []
 yap = []
 
@@ -114,7 +114,7 @@ x_ce = [] # these ones are for logging position/velocity corresponding to the li
 y_ce = [] # so we can calculate psi_0 and psi_1 offline or after the simulation
 vx_ce = []
 vy_ce = []
-# Correspond to prism
+# Correspond to cylinder 2
 x_pe = [] # these ones are for logging position/velocity corresponding to the lidar measurements
 y_pe = [] # so we can calculate psi_0 and psi_1 offline or after the simulation
 vx_pe = []

@@ -72,9 +72,11 @@ YawF = []
 YawC = []
 
 # readings obstacle (for the cylinder)
+xac = []
+yac = []
 xa = []
 ya = []
-# obstacle readings (for the prism)
+# obstacle readings (for the second cylinder)
 xap = []
 yap = []
 
@@ -99,6 +101,10 @@ x_pe = [] # these ones are for logging position/velocity corresponding to the li
 y_pe = [] # so we can calculate psi_0 and psi_1 offline or after the simulation
 vx_pe = []
 vy_pe = []
+
+# readings of the non-modified/original obstacle
+xa_orig = []
+ya_orig = []
 
 
 # Analyze control input (see if error is being minimized )
@@ -163,103 +169,17 @@ absolute_file_path = os.path.join(script_dir, file_name)
  # Open the HDF5 file for writing
 with h5py.File(absolute_file_path, 'a') as hf:
 
-	class ellipse:
+	class vortex:
 
-		def ellipse_calc(self,xac,yac, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe):
+		def VPM_calc(self,xac,yac, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe):
+			# Kutta condition flag (decide which one to use)
+			self.flagKutta = np.array([0, 0, 0,1])
+            # position 0 is for smooth flow off edge for closed object
+            # position 1 is for smooth flow off ege for closed object using point extended into space a small amount
+            # position 2 is for smooth flow off the edge of a non closed i.e. sail detection with lidar
+            # position 3 is for smooth flow off an extended edge of a non closed i.e. sail detection with lidar. Adds safety factor to direct flow away from object
 
-			# Because the ellipse estimation is too computationally expensive for this VM 
-			# for real time estimation, we will use it for offline ellipse estimation
-			# (wont be able to do this for hardware)
-
-			#--------------Obstacle parameters-----------------------------
-			self.SF = 1.0 # safety factor distance from the obstcle (set as the width of the Clover)
-			self.SFp = 1.2 # safety factor for prism
-			self.cyl_rad = 1.5 # [m] radius of the cylinder
-			self.rec_rad = 1.25 # [m] half of the longest side of the prism
-
-			#--------------------------------------------------------------
-
-			# Doing the cylinder and prism seperately because the prism is giving straneg results on psi_1
-
-			# Iterate over rows of data (for the prism)
-			for i, (xa_row, ya_row) in enumerate(zip(xap, yap)):
-
-			# Ellipse model-------------------------
-				xy = np.column_stack((xa_row, ya_row))
-				ellipse_model = EllipseModel()
-				ellipse_model.estimate(xy)
-
-				# If ellipse_model.params is None, skip this iteration
-				if ellipse_model.params is None:
-					continue
-
-				#----------- Calculate delta_p, delta_v, and delta_a-----------------------------------
-				delta_p = np.array([x_pe[i]-ellipse_model.params[0], y_pe[i]-ellipse_model.params[1]])
-				delta_v = np.array([vx_pe[i]-0, vy_pe[i]-0]) # static obstacle assumption for now
-
-				# Calculate norms
-				norm_delta_p = np.linalg.norm(delta_p, ord=2)  # Euclidean norm
-				norm_delta_v = np.linalg.norm(delta_v, ord=2)  # Euclidean norm
-
-				# constants
-				q1 = 15#15
-				q2 = 10#10
-				#print(max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8)) # woow, some pretty unstacle shapes come out of this on the prism
-				r = self.SFp + max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8) # make sure it is at least giving 0.8, where the max prism radius is 1.25 i believe
-
-				self.psi_0p = norm_delta_p - r
-				self.psi_1p = (np.dot(delta_p, delta_v)) / norm_delta_p + q1*(self.psi_0p)
-
-				psi_0p.append(self.psi_0p)
-				psi_1p.append(self.psi_1p)
-				r_cyl.append(r)
-				# Extract parameters of the fitted ellipse
-				xcp.append(ellipse_model.params[0])
-				ycp.append(ellipse_model.params[1])
-				a_fitp.append(ellipse_model.params[2])
-				b_fitp.append(ellipse_model.params[3])
-				thetap.append(ellipse_model.params[4])
-
-			#--------------------------------------------------------------------------------------------
-			# Iterate over rows of data (for the cylinder)
-			for i, (xa_row, ya_row) in enumerate(zip(xac, yac)):#, x_ce, vx_ce, y_ce, vy_ce):
-				# Ellipse model-------------------------
-				xy = np.column_stack((xa_row, ya_row))
-				ellipse_model = EllipseModel()
-				ellipse_model.estimate(xy)
-
-				# If ellipse_model.params is None, skip this iteration
-				if ellipse_model.params is None:
-					continue
-
-				#----------- Calculate delta_p, delta_v, and delta_a-----------------------------------
-				delta_p = np.array([x_ce[i]-ellipse_model.params[0], y_ce[i]-ellipse_model.params[1]])
-				delta_v = np.array([vx_ce[i]-0, vy_ce[i]-0]) # static obstacle assumption for now
-
-				# Calculate norms
-				norm_delta_p = np.linalg.norm(delta_p, ord=2)  # Euclidean norm
-				norm_delta_v = np.linalg.norm(delta_v, ord=2)  # Euclidean norm
-
-				# constants
-				q1 = 12#15
-				q2 = 9#10
-				r = self.SF + max(ellipse_model.params[2], ellipse_model.params[3])
-
-				self.psi_0 = norm_delta_p - r
-				self.psi_1 = (np.dot(delta_p, delta_v)) / norm_delta_p + q1*(self.psi_0)
-
-				psi_0.append(self.psi_0)
-				psi_1.append(self.psi_1)
-				r_rec.append(r)
-				#--------------------------------------------------------------------------------------------
-
-
-				# Extract parameters of the fitted ellipse
-				xc.append(ellipse_model.params[0])
-				yc.append(ellipse_model.params[1])
-				a_fit.append(ellipse_model.params[2])
-				b_fit.append(ellipse_model.params[3])
-				theta.append(ellipse_model.params[4])
+			
 
 
 			# Return lists of ellipse parameters for each row of data
@@ -277,7 +197,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			# (wont be able to do this for hardware)
 
 			#--------------Obstacle parameters-----------------------------
-			self.SF = 0.8 # safety factor distance from the obstcle (set as the width of the Clover)
+			self.SF = 0.9 # safety factor distance from the obstcle (set as the width of the Clover)
 			self.SFp = 1.2 # safety factor for prism
 			self.cyl_rad = 1.5 # [m] radius of the cylinder
 			self.rec_rad = 1.25 # [m] half of the longest side of the prism
@@ -309,7 +229,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				q1 = 15#15
 				q2 = 10#10
 				#print(max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8)) # woow, some pretty unstacle shapes come out of this on the prism
-				r = self.SFp + self.rec_rad #max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8) # make sure it is at least giving 0.8, where the max prism radius is 1.25 i believe
+				r = self.SF + self.cyl_rad #max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8) # make sure it is at least giving 0.8, where the max prism radius is 1.25 i believe
 
 				self.psi_0p = norm_delta_p - r
 				self.psi_1p = (np.dot(delta_p, delta_v)) / norm_delta_p + q1*(self.psi_0p)
@@ -378,12 +298,12 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			# which is which may increase speed some. N_horizon, increase to slow drone down some and react faster to obstacles. Lower, increases time to first shoting node and increases speed
 
 			# Define the sink location and strength
-			self.g_sink = 2.00
+			self.g_sink = 2.4
 			self.xsi = 20 # 20
 			self.ysi = 20 # 20
 
 			# Define the source strength and location
-			self.g_source = 0.8
+			self.g_source = 0.9
 			self.xs = -0.1
 			self.ys = -0.1
 			# self.xs = 5
@@ -514,12 +434,12 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			
 
 			#--------------Obstacle parameters-----------------------------
-			self.SF = 0.8 # safety factor distance from the obstcle (set as the width of the Clover)
+			self.SF = 0.9 # safety factor distance from the obstcle (set as the width of the Clover)
 			self.cyl_rad = 1.5 # [m] radius of the cylinder
 			# Center of the cylinder location for experiment
 			self.x_cyl = 6.0
 			self.y_cyl = 5.1
-			self.SFp = 1.2 # safety factor for prism
+			self.SFp = 0.9 # safety factor for prism
 			self.rec_rad = 1.25 # [m] half of the longest side of the prism
 			# Center of the prism for experiment
 			self.x_rec = 11.5
@@ -822,7 +742,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 
 				
-				
+				# print(self.obstacle_counter)
 				
 				for j in range(self.N_horizon): # Up to N-1
 					# An obstacle was detected, use the obstacle_counter number
@@ -841,7 +761,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 						vy_est = self.obs_vy1 + ay_est*j*self.dt
 						y_est = self.obs_y1 + self.obs_vy1*j*self.dt + (1/2)*ay_est*(j*self.dt)**2
 
-						print(self.obs_vx1*j*self.dt + (1/2)*ax_est*(j*self.dt)**2)
+						# print(self.obs_vx1*j*self.dt + (1/2)*ax_est*(j*self.dt)**2)
 						# self.acados_solver.set(j, "p", np.array([self.x_cyl,0,0,self.y_cyl,0,0,r])) # Assuming a static obstacle (xc,yc)
 						self.acados_solver.set(j, "p", np.array([x_est,vx_est,ax_est,y_est,vy_est,ay_est, r])) # set the obstacle dynamics [x,vx,ax,y,vy,ay] dynamic obstacle
 
@@ -849,9 +769,9 @@ with h5py.File(absolute_file_path, 'a') as hf:
 						# This is the static prism, which has a radius of (1.25m??)
 						# 	# Set the distance from the obstacle
 						
-						r = self.SFp + self.cyl_rad
+						r = self.SF + self.cyl_rad
 						
-						self.acados_solver.set(j, "p", np.array([self.x_rec,0,0,self.y_rec,0,0,r])) # Assuming a static obstacle (xc,yc)
+						self.acados_solver.set(j, "p", np.array([self.obs_x2,0,0,self.obs_y2,0,0,r])) # Assuming a static obstacle (xc,yc)
 				
 				if self.obstacle_counter == 1:
 					self.acados_solver.set(self.N_horizon, "p", np.array([self.x_cyl,0,0,self.y_cyl,0,0,r])) # Assuming a static obstacle (xc,yc)
@@ -1192,7 +1112,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 			#-------------External LOG------------------
 			# Create a group to store velocity field for this iteration/time
-			iteration_group = hf.create_group('LiDar_prism_results')
+			iteration_group = hf.create_group('LiDar_cyl_circle_results')
 			# Have to log lidar readings in the actual lidar loop. this ie because when we append
 			# the readings row after row, the rows will have different lengths. h5 tries to convert it
 			# to numpy arrays which errors out because all the rows are differenet lengths. Se we have to log
@@ -1210,10 +1130,10 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			iteration_group.create_dataset('vy_cloverpe', data=vy_pe)
 			iteration_group.create_dataset('psi_0p', data=psi_0p)
 			iteration_group.create_dataset('psi_1p', data=psi_1p)
-			iteration_group.create_dataset('r_rec', data=r_rec)
+			iteration_group.create_dataset('r_cyl', data=r_cyl)
 
 
-			iteration_group = hf.create_group('LiDar_cylinder_results')
+			iteration_group = hf.create_group('LiDar_figure8_results')
 			# Ellipse estimations
 			iteration_group.create_dataset('xc', data=xc)
 			iteration_group.create_dataset('yc', data=yc)
