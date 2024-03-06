@@ -23,6 +23,7 @@ from scipy.interpolate import griddata
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib import path
 import os
 
 from clover import srv
@@ -144,6 +145,9 @@ evx=[]
 evy=[]
 eyaw=[]
 
+# Log the time for the position control variables
+time_now = []
+
 # Global lof variables
 X = []
 VX = []
@@ -179,6 +183,191 @@ with h5py.File(absolute_file_path, 'a') as hf:
             # position 2 is for smooth flow off the edge of a non closed i.e. sail detection with lidar
             # position 3 is for smooth flow off an extended edge of a non closed i.e. sail detection with lidar. Adds safety factor to direct flow away from object
 
+			#---------------- Safety factor-----------------------------------------------
+			# put a safety factor on the detected obstacle
+			# Reduce the range by a scaling factor beta for each real range (set as diameter of the clover)
+			beta = 2.5 # Scale object and shift
+			# Combine xdata and ydata into a single array of points
+			points = np.column_stack((self.x_local, y_local))
+
+			# Find the point closest to the origin
+			min_distance_index = np.argmin(np.linalg.norm(points, axis=1))
+			closest_point = points[min_distance_index]
+
+			# Step 2: Shift all points so that the closest point becomes the origin
+			shifted_points = points - closest_point
+
+			# Step 3: Scale all points by a factor beta
+			scaled_points = shifted_points * beta
+
+			# Step 4: Shift all points back to their original positions
+			final_points = scaled_points + closest_point
+
+			# Calculate the distance to move the closest point
+			desired_distance = 0 # was 0.5
+
+			# Calculate the current distance to the origin for the closest point
+			current_distance = np.linalg.norm(closest_point)
+
+			# Calculate the unit vector in the direction of the closest point
+			unit_vector = closest_point / current_distance
+
+			# Calculate the new position for the closest point
+			new_closest_point = unit_vector * (current_distance - desired_distance)
+
+			# Calculate the difference vector
+			shift_vector = closest_point - new_closest_point
+
+			# Shift all points including the closest point
+			shifted_points = final_points - shift_vector
+
+
+			# translate the shape equally to the origin (To clover)
+			self.x_local = shifted_points[:,0]
+			y_local = shifted_points[:,1]
+
+
+                #---------------------------------------------------------------------------------
+
+			# Upate the number of panels
+			self.n = len(self.xa)-1
+
+			# in this case an obstacle was detected so apply panel method navigation
+
+			# Get current state of this follower 
+			# telem = get_telemetry(frame_id='map')
+
+			# #-------------------- Offline Panel Calculations---------------------------------------------------
+
+			#This function calculates the location of the control points as well as the
+			#right hand side of the stream function equation:
+
+			[xmid, ymid, dx, dy, Sj, phiD, rhs] = CLOVER_COMPONENTS(self.xa, self.ya, self.U_inf, self.V_inf, self.g_source, self.g_sink, self.xs, self.ys, self.xsi, self.ysi, self.n, self.g_clover, x_clover, y_clover)
+
+
+
+			# Convert angles from [deg] to [rad]
+			phi = np.deg2rad(phiD)  # Convert from [deg] to [rad]
+
+
+
+			# Evaluate gemoetric integral matrix without the kutta condition equation
+			I = CLOVER_STREAM_GEOMETRIC_INTEGRAL(xmid, ymid, self.xa, self.ya, phi, Sj, self.n)
+
+			#-----------------------extended kutta condition---------------------------------------------------------
+			# Extended point off of the end of the object for kutta condition
+			# Calculate the extended edge point for the sail extended kutta condition
+			ext_dist = 1.0
+
+
+			finite_indices = np.where(np.isfinite(self.x_local))[0] # find where the indices are finite in the clover/local reference frame (this is being updated in the lidar function)
+			ang = self.lidar_angles[finite_indices] # select the angles that are finite readings
+
+			# Step 3: Compute the sums for left and right sides using array operations
+			left_sum = np.sum(ang[ang > 0])
+			right_sum = np.sum(ang[ang < 0])
+
+			# Determine which side has the obstacle closer
+			if left_sum > abs(right_sum):
+				# print("Obstacle is more to the left.")
+				#---------Object is more to the left of the clover when detecting-------------
+				# this is intuitively backwards, you would think you would have to extend the kutta off the right side of the object
+				# if the object was more to the left of the clover so we could go around the irght side of the object.
+
+				directionVect = [self.xa[-1] - self.xa[-2], self.ya[-1] - self.ya[-2]] # off the end of the clockwise ending panel
+				directionVect = directionVect / np.linalg.norm(directionVect)
+				# normalize the direction vector
+
+				# Calculate the coordinates of the extended point in the general frame
+				extendedX = self.xa[-1] + ext_dist*directionVect[0]
+				extendedY = self.ya[-1] + ext_dist*directionVect[1]
+
+				#---------Log intuitive trail point for the plots in paper-------------
+				q  = [self.xa[0] - self.xa[1], self.ya[0] - self.ya[1]] 
+				q  = q / np.linalg.norm(q)
+
+				int_Y = self.ya[0] + ext_dist*q[1]
+				int_X = self.xa[0] + ext_dist*q[0]
+
+				trail_intuitive = [int_X, int_Y]
+
+			elif left_sum < abs(right_sum):
+				# print("Obstacle is more to the right.")
+				#-----------Object is more to the right of the clover when detecting------------
+				# This is intuitively backwards, as you would think this would be the case for when the object is detected more in the left half 
+				# of the clover...(not sure why this works this way). This kutta condition will have the flowlines go off the left side of the object
+				directionVect = [self.xa[0] - self.xa[1], self.ya[0] - self.ya[1]] # off the end of the CCW/right ending panel
+				directionVect = directionVect / np.linalg.norm(directionVect)
+				extendedY = self.ya[0] + ext_dist*directionVect[1]
+				extendedX = self.xa[0] + ext_dist*directionVect[0]
+
+				#---------Log intuitive trail point for the plots in paper-------------
+				q  = [self.xa[-1] - self.xa[-2], self.ya[-1] - self.ya[-2]]
+				q  = q / np.linalg.norm(q)
+
+				int_Y = self.ya[-1] + ext_dist*q[1]
+				int_X = self.xa[-1] + ext_dist*q[0]
+
+				trail_intuitive = [int_X, int_Y]
+			else:
+				# print("Obstacle is centered.")
+
+				directionVect = [self.xa[0] - self.xa[1], self.ya[0] - self.ya[1]] # off the end of the CCW/right ending panel
+				directionVect = directionVect / np.linalg.norm(directionVect)
+				extendedY = self.ya[0] + ext_dist*directionVect[1]
+				extendedX = self.xa[0] + ext_dist*directionVect[0]
+
+				#---------Log other one-------------
+				q  = [self.xa[-1] - self.xa[-2], self.ya[-1] - self.ya[-2]]
+				q  = q / np.linalg.norm(q)
+
+				int_Y = self.ya[-1] + ext_dist*q[1]
+				int_X = self.xa[-1] + ext_dist*q[0]
+
+				trail_intuitive = [int_X, int_Y]
+
+
+
+			# coordinates of the translated point off the trailing edge
+			trail_point = [extendedX, extendedY]
+			#---------------------------------------------------------------------------------------------------------------------------------------------
+			# Form the last line of the system of equations with the kutta condition 
+			[I, rhs] = CLOVER_KUTTA(I, trail_point, self.xa, self.ya, phi, Sj, self.n, self.flagKutta, rhs, self.U_inf, self.V_inf, self.xs, self.ys, self.xsi, self.ysi, self.g_source, self.g_sink, self.g_clover, x_clover, y_clover)
+
+			# calculating the vortex density (and stream function from kutta condition)
+			# by solving linear equations given by
+			g = np.linalg.solve(I, rhs.T)  # = gamma = Vxy/V_infinity for when we are using U_inf as the free flow magnitude
+			# broken down into components (using cos(alpha), and sin(alpha)), and free flow is the only other RHS
+			# contribution (no source or sink). It is equal to Vxy 
+			# when we define the x and y (U_inf and V_inf) components seperately.
+
+
+			# Path to figure out if grid point is inside polygon or not
+			AF = np.vstack((self.xa,self.ya)).T
+			AF_orig = np.vstack((self.xa_orig,self.ya_orig)).T
+			#print(AF)
+			afPath = path.Path(AF)
+			afPath_orig = path.Path(AF_orig)
+
+			for m in range(self.nGridX):
+				for n in range(self.nGridY):
+					XP, YP = self.XX[m, n], self.YY[m, n]
+					# XP, YP = self.X_mesh[m, n], self.Y_mesh[m, n]
+					# Check if the current grid point corresponds to (xa, ya) or (xa_orig, ya_orig)
+					if  afPath_orig.contains_points([[XP,YP]]):#afPath.contains_points([[XP,YP]]) or afPath_orig.contains_points([[XP,YP]]):
+						self.Vxe[m, n] = 0
+						self.Vye[m, n] = 0
+
+					else:
+						u, v = CLOVER_STREAMLINE(XP, YP, self.xa, self.ya, phi, g, Sj, self.U_inf, self.V_inf, self.xs, self.ys, self.xsi, self.ysi, self.g_source, self.g_sink, self.g_clover, x_clover, y_clover)
+						# print(u)
+
+
+						self.Vxe[m, n] = u
+
+						self.Vye[m, n] = v
+
+
 			
 
 
@@ -190,7 +379,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 	class ellipse:
 
-		def ellipse_calc(self,xa,ya, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe):
+		def ellipse_calc(self,xac,yac, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe):
 
 			# Because the ellipse estimation is too computationally expensive for this VM 
 			# for real time estimation, we will use it for offline ellipse estimation
@@ -247,7 +436,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 		#--------------------------------------------------------------------------------------------
 
 			# Iterate over rows of data (for the cylinder)
-			for i, (xa_row, ya_row) in enumerate(zip(xa, ya)):#, x_ce, vx_ce, y_ce, vy_ce):
+			for i, (xa_row, ya_row) in enumerate(zip(xac, yac)):#, x_ce, vx_ce, y_ce, vy_ce):
 				# Ellipse model-------------------------
 				xy = np.column_stack((xa_row, ya_row))
 				ellipse_model = EllipseModel()
@@ -708,6 +897,22 @@ with h5py.File(absolute_file_path, 'a') as hf:
 											# so it will be equal to 1 for the cylinder and equal to 2 for the prism
 					self.object_detect = True # Update object detected flag
 
+					# Get the actual time:
+					current_time = rospy.Time.now()
+
+							#-------------External LOG------------------
+					# Create a group to store velocity field for this iteration/time
+					iteration_group = hf.create_group(f'Obstacle_detect_iteration_{self.lidar_timestamp}')
+					iteration_group.create_dataset('XX', data=self.XX)
+					iteration_group.create_dataset('YY', data=self.YY)
+					iteration_group.create_dataset('xa_orig', data=self.xa)
+					iteration_group.create_dataset('ya_orig', data=self.ya)
+					# log the current clover position as well for plotting marker location on map plot
+					iteration_group.create_dataset('x_clover_cur', data=self.clover_pose.position.x)
+					iteration_group.create_dataset('y_clover_cur', data=self.clover_pose.position.y)
+					iteration_group.create_dataset('time_actual', data=current_time.to_sec())
+
+
 				# Log the Clover position and velocity at the same time we are logging this lidar data reading
 				# do this so we can calculate psi_0 and psi_1 based on the ellipse readings. Hopefully will calculate this
 				# in real time when we get to hardware in the lab
@@ -715,8 +920,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				# Append row after row of data (to log readings)
 				if self.obstacle_counter == 1:
 					# append the readings of the cylinder
-					xa.append(self.xa.tolist())
-					ya.append(self.ya.tolist())
+					xac.append(self.xa.tolist())
+					yac.append(self.ya.tolist())
 					x_ce.append(self.clover_pose.position.x) # current clover state of reading
 					vx_ce.append(telem.vx)
 					y_ce.append(self.clover_pose.position.y)
@@ -742,7 +947,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 
 				
-				# print(self.obstacle_counter)
+				print(self.obstacle_counter)
 				
 				for j in range(self.N_horizon): # Up to N-1
 					# An obstacle was detected, use the obstacle_counter number
@@ -770,8 +975,16 @@ with h5py.File(absolute_file_path, 'a') as hf:
 						# 	# Set the distance from the obstacle
 						
 						r = self.SF + self.cyl_rad
+						# Dynamic obstacle, will use simple linear kinematic equations for now:
+						ax_est = self.obs_ax2
+						vx_est = self.obs_vx2 + ax_est*j*self.dt
+						x_est = self.obs_x2 + self.obs_vx2*j*self.dt + (1/2)*ax_est*(j*self.dt)**2
+
+						ay_est = self.obs_ay2
+						vy_est = self.obs_vy2 + ay_est*j*self.dt
+						y_est = self.obs_y2 + self.obs_vy2*j*self.dt + (1/2)*ay_est*(j*self.dt)**2
 						
-						self.acados_solver.set(j, "p", np.array([self.obs_x2,0,0,self.obs_y2,0,0,r])) # Assuming a static obstacle (xc,yc)
+						self.acados_solver.set(j, "p", np.array([x_est,vx_est,ax_est,y_est,vy_est,ay_est, r])) # Assuming a static obstacle (xc,yc)
 				
 				if self.obstacle_counter == 1:
 					self.acados_solver.set(self.N_horizon, "p", np.array([self.x_cyl,0,0,self.y_cyl,0,0,r])) # Assuming a static obstacle (xc,yc)
@@ -1040,7 +1253,11 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				Ux.append(u0[0])
 				Uy.append(u0[1])
 				Uz.append(u0[2])
-				
+
+				# Get the actual time:
+				current_time = rospy.Time.now()
+				time_now.append(current_time.to_sec())
+
 			
 				#set_position(x=posx[k], y=posy[k], z=posz[k],frame_id='aruco_map')
 				#set_velocity(vx=velx[k], vy=vely[k], vz=velz[k],frame_id='aruco_map')#,yaw = yawc[i]) 
@@ -1106,7 +1323,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 			w = ellipse()
 
-			xc, yc, a_fit, b_fit, theta, psi_0, psi_1 = w.ellipse_calc(xa,ya, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe)
+			xc, yc, a_fit, b_fit, theta, psi_0, psi_1 = w.ellipse_calc(xac,yac, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe)
 
 
 
@@ -1147,7 +1364,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			iteration_group.create_dataset('vy_cloverce', data=vy_ce)
 			iteration_group.create_dataset('psi_0', data=psi_0)
 			iteration_group.create_dataset('psi_1', data=psi_1)
-			iteration_group.create_dataset('r_cyl', data=r_cyl)
+			iteration_group.create_dataset('r_cyl', data=r_rec)
 
 			#-------------External LOG------------------
             # Create a group to store the control variables over the simulation
@@ -1164,6 +1381,9 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			iteration_group.create_dataset('Ux_mpc', data=Ux)
 			iteration_group.create_dataset('Uy_mpc', data=Uy)
 			iteration_group.create_dataset('Uz_mpc', data=Uz)
+
+			#time_now = np.array(time_now)
+			iteration_group.create_dataset('time_now', data=time_now)
 
                 #------------------------------------------
 			
