@@ -75,8 +75,7 @@ YawC = []
 # readings obstacle (for the cylinder)
 xac = []
 yac = []
-xa = []
-ya = []
+
 # obstacle readings (for the second cylinder)
 xap = []
 yap = []
@@ -103,9 +102,27 @@ y_pe = [] # so we can calculate psi_0 and psi_1 offline or after the simulation
 vx_pe = []
 vy_pe = []
 
-# readings of the non-modified/original obstacle
-xa_orig = []
-ya_orig = []
+# readings of the non-modified/original obstacle1
+xa_orig1 = []
+ya_orig1 = []
+# modified lidar obstacle 1
+xa1 = []
+ya1 = []
+x_cur1 = []
+y_cur1 = []
+yaw1 = []
+time1 = []
+
+# readings of the non-modified/original obstacle1
+xa_orig2 = []
+ya_orig2 = []
+# modified lidar obstacle 1
+xa2 = []
+ya2 = []
+x_cur2 = []
+y_cur2 = []
+yaw2 = []
+time2  =[]
 
 
 # Analyze control input (see if error is being minimized )
@@ -175,7 +192,25 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 	class vortex:
 
-		def VPM_calc(self,xac,yac, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe):
+		def VPM_calc(self,xa,ya,x_clover,y_clover, yaw, U_inf, V_inf, g_source, g_sink, xs, ys, xsi, ysi, g_clover,lidar_angles):
+
+			# x_local = np.array(xa)
+			# y_local = np.array(ya)
+
+			# x_local_orig = np.array(xa)
+			# y_local_orig = np.array(ya)
+
+			x_local = xa[0]
+			y_local = ya[0]
+
+			x_local_orig = xa[0]
+			y_local_orig = ya[0]
+
+			yaw = yaw[0]
+
+			x_clover = x_clover[0]
+			y_clover = y_clover[0]
+
 			# Kutta condition flag (decide which one to use)
 			self.flagKutta = np.array([0, 0, 0,1])
             # position 0 is for smooth flow off edge for closed object
@@ -188,7 +223,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			# Reduce the range by a scaling factor beta for each real range (set as diameter of the clover)
 			beta = 2.5 # Scale object and shift
 			# Combine xdata and ydata into a single array of points
-			points = np.column_stack((self.x_local, y_local))
+			points = np.column_stack((x_local, y_local))
 
 			# Find the point closest to the origin
 			min_distance_index = np.argmin(np.linalg.norm(points, axis=1))
@@ -204,7 +239,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			final_points = scaled_points + closest_point
 
 			# Calculate the distance to move the closest point
-			desired_distance = 0 # was 0.5
+			desired_distance = 0.2 # was 0.5
 
 			# Calculate the current distance to the origin for the closest point
 			current_distance = np.linalg.norm(closest_point)
@@ -223,8 +258,38 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 
 			# translate the shape equally to the origin (To clover)
-			self.x_local = shifted_points[:,0]
+			x_local = shifted_points[:,0]
 			y_local = shifted_points[:,1]
+
+			#------------------2D transformations--------------------
+			# Homogenous transformation matrix for 2D
+			R = np.array([[math.cos(yaw), -math.sin(yaw)], [math.sin(yaw), math.cos(yaw)]]) # rotation matrix
+			T = np.vstack([np.hstack([R, np.array([[x_clover], [y_clover]])]),[0,0,1]]) # Homogenous transformation matrix
+
+			# Lidar readings in homogenous coordinates
+			readings_local = np.vstack([x_local, y_local, np.ones_like(x_local)])
+			readings_local_orig = np.vstack([x_local_orig, y_local_orig, np.ones_like(x_local_orig)])
+
+			# Transform all lidar readings to global coordinates
+			readings_global = np.dot(T, readings_local)
+			readings_global_orig = np.dot(T, readings_local_orig)
+
+			# Extract the tranformed positions
+			self.readings_global = readings_global[:2,:].T
+			self.readings_global_orig = readings_global_orig[:2,:].T
+
+			# Update the lidar detection readings for logging below
+			self.xa = self.readings_global[:,0].T
+			self.ya = self.readings_global[:,1].T
+
+			self.xa_orig = self.readings_global_orig[:,0].T
+			self.ya_orig = self.readings_global_orig[:,1].T
+
+			# Filter out the inf values in the data point arrays
+			self.xa = self.xa[np.isfinite(self.xa)]
+			self.ya = self.ya[np.isfinite(self.ya)]
+			self.xa_orig = self.xa_orig[np.isfinite(self.xa_orig)]
+			self.ya_orig = self.ya_orig[np.isfinite(self.ya_orig)]
 
 
                 #---------------------------------------------------------------------------------
@@ -242,7 +307,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			#This function calculates the location of the control points as well as the
 			#right hand side of the stream function equation:
 
-			[xmid, ymid, dx, dy, Sj, phiD, rhs] = CLOVER_COMPONENTS(self.xa, self.ya, self.U_inf, self.V_inf, self.g_source, self.g_sink, self.xs, self.ys, self.xsi, self.ysi, self.n, self.g_clover, x_clover, y_clover)
+			[xmid, ymid, dx, dy, Sj, phiD, rhs] = CLOVER_COMPONENTS(self.xa, self.ya, U_inf, V_inf, g_source, g_sink, xs, ys, xsi, ysi, self.n, g_clover, x_clover, y_clover)
 
 
 
@@ -260,8 +325,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			ext_dist = 1.0
 
 
-			finite_indices = np.where(np.isfinite(self.x_local))[0] # find where the indices are finite in the clover/local reference frame (this is being updated in the lidar function)
-			ang = self.lidar_angles[finite_indices] # select the angles that are finite readings
+			finite_indices = np.where(np.isfinite(x_local))[0] # find where the indices are finite in the clover/local reference frame (this is being updated in the lidar function)
+			ang = lidar_angles[finite_indices] # select the angles that are finite readings
 
 			# Step 3: Compute the sums for left and right sides using array operations
 			left_sum = np.sum(ang[ang > 0])
@@ -332,7 +397,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			trail_point = [extendedX, extendedY]
 			#---------------------------------------------------------------------------------------------------------------------------------------------
 			# Form the last line of the system of equations with the kutta condition 
-			[I, rhs] = CLOVER_KUTTA(I, trail_point, self.xa, self.ya, phi, Sj, self.n, self.flagKutta, rhs, self.U_inf, self.V_inf, self.xs, self.ys, self.xsi, self.ysi, self.g_source, self.g_sink, self.g_clover, x_clover, y_clover)
+			[I, rhs] = CLOVER_KUTTA(I, trail_point, self.xa, self.ya, phi, Sj, self.n, self.flagKutta, rhs, U_inf, V_inf, xs, ys, xsi, ysi, g_source, g_sink, g_clover, x_clover, y_clover)
 
 			# calculating the vortex density (and stream function from kutta condition)
 			# by solving linear equations given by
@@ -349,8 +414,36 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			afPath = path.Path(AF)
 			afPath_orig = path.Path(AF_orig)
 
-			for m in range(self.nGridX):
-				for n in range(self.nGridY):
+			# Grid parameters
+			self.nGridX = 20;  # 20 is good                                                         # X-grid for streamlines and contours
+			self.nGridY = 20;  # 20 is good                                                    # Y-grid for streamlines and contours
+			self.xVals  = [-1, 21];  # ensured it is extended past the domain incase the clover leaves domain             # X-grid extents [min, max]
+			self.yVals  = [-1, 21];  #-0.3;0.3                                                 # Y-grid extents [min, max]
+
+			# Define Lidar range (we will set parameters to update grid resolution within detection range):
+			self.lidar_range = 3.5 # [m]
+
+			
+			# Create an array of starting points for the streamlines
+			x_range = np.linspace(0, 10, int((10-0)/0.5) + 1)
+			y_range = np.linspace(0, 10, int((10-0)/0.5) + 1)
+
+			x_1 = np.zeros(len(y_range))
+			y_1 = np.zeros(len(x_range))
+			Xsl = np.concatenate((x_1, x_range))
+			Ysl = np.concatenate((np.flip(y_range), y_1))
+			XYsl = np.vstack((Xsl,Ysl)).T
+
+			# Generate the grid points
+			Xgrid = np.linspace(self.xVals[0], self.xVals[1], self.nGridX)
+			Ygrid = np.linspace(self.yVals[0], self.yVals[1], self.nGridY)
+			self.XX, self.YY = np.meshgrid(Xgrid, Ygrid)
+
+			self.Vxe = np.zeros((self.nGridX, self.nGridY))
+			self.Vye = np.zeros((self.nGridX, self.nGridY))
+
+			for m in range(nGridX):
+				for n in range(nGridY):
 					XP, YP = self.XX[m, n], self.YY[m, n]
 					# XP, YP = self.X_mesh[m, n], self.Y_mesh[m, n]
 					# Check if the current grid point corresponds to (xa, ya) or (xa_orig, ya_orig)
@@ -359,7 +452,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 						self.Vye[m, n] = 0
 
 					else:
-						u, v = CLOVER_STREAMLINE(XP, YP, self.xa, self.ya, phi, g, Sj, self.U_inf, self.V_inf, self.xs, self.ys, self.xsi, self.ysi, self.g_source, self.g_sink, self.g_clover, x_clover, y_clover)
+						u, v = CLOVER_STREAMLINE(XP, YP, self.xa, self.ya, phi, g, Sj, U_inf, V_inf, xs, ys, xsi, ysi, g_source, g_sink, g_clover, x_clover, y_clover)
 						# print(u)
 
 
@@ -368,11 +461,16 @@ with h5py.File(absolute_file_path, 'a') as hf:
 						self.Vye[m, n] = v
 
 
-			
+			# Flatten the grid point matices and velocity matrices into vectory arrays for the griddata function
+			# Update the velocity field:
+			self.XX_f = self.XX.flatten()
+			self.YY_f = self.YY.flatten()
+			self.Vxe_f = self.Vxe.flatten()
+			self.Vye_f = self.Vye.flatten()
 
 
 			# Return lists of ellipse parameters for each row of data
-			return xc, yc, a_fit, b_fit, theta, psi_0, psi_1
+			return self.xa,self.ya, self.xa_orig, self.ya_orig, self.Vxe,self.Vye, extendedX, extendedY, int_X, int_Y
 
 	lidar_prism = hf.create_group('Lidar_reading_prism')
 	lidar_cylinder = hf.create_group('Lidar_reading_cylinder')
@@ -418,7 +516,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				q1 = 15#15
 				q2 = 10#10
 				#print(max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8)) # woow, some pretty unstacle shapes come out of this on the prism
-				r = self.SF + self.cyl_rad #max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8) # make sure it is at least giving 0.8, where the max prism radius is 1.25 i believe
+				r = self.SF + max(ellipse_model.params[2], ellipse_model.params[3])#self.cyl_rad #max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8) # make sure it is at least giving 0.8, where the max prism radius is 1.25 i believe
 
 				self.psi_0p = norm_delta_p - r
 				self.psi_1p = (np.dot(delta_p, delta_v)) / norm_delta_p + q1*(self.psi_0p)
@@ -796,48 +894,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				# Filter out the inf values in the data point arrays
 				self.xa = self.xa[np.isfinite(self.xa)]
 				self.ya = self.ya[np.isfinite(self.ya)]
-	#-------------------Ellipse estimation section-------------------------------------------------------------------
-				# # The least squares at each iteration is too computationally intensive for this VM system, it sucks up to much CPU 
-				# # percentage. Therefore we wont calculate here, we will log the lidar readings and calculate all of the ellipse estimations
-				# # after the simulation has run for plotting (when using on hardware, we wont have gazebo etc running so there should be enough resources)
-
-				# if self.ellipse_first:
-				# 	# if an obstacle is aleady detected, do nothing
-				# 	pass
-				# else:
-
-				# 	 # If no obstacle is currently detected, perform the calculation
-				# 	# This calculation will only be performed once per new obstacle
-
-				# 	# Ellipse model-------------------------
-				# 	xy = np.column_stack((self.xa[1::2],self.ya[1::2]))
-				# 	ellipse_model = EllipseModel()
-				# 	ellipse_model.estimate(xy)
-
-				# 	# Extract parameters of the fitted ellipse
-				# 	self.xc = ellipse_model.params[0]
-				# 	self.yc = ellipse_model.params[1]
-				# 	self.a_fit = ellipse_model.params[2]
-				# 	self.b_fit = ellipse_model.params[3]
-				# 	self.theta = ellipse_model.params[4]
-
-				# 	self.ellipse_first = True
-
-				# 	# print(self.xc)
-
-				# 	#------compare--------
-
-
-				# 	# reg = LsqEllipse().fit(xy)
-
-				# 	# center_t, width, height, phi = reg.as_parameters()
-
-				# 	# print(center_t[0])
-
-				# 	#--------------------
-
-				# 	xc.append(self.xc)
-				# 	yc.append(self.yc)
+	
 	#-----------------------------------------------------------------------------------------------------------------
 				# # Append row after row of data (to log readings)
 				# xa.append(self.xa.tolist())
@@ -855,30 +912,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 				
 
-				# now that the obstacle is within the lidar range, we can start calculating psi_0 and psi_1 for logging
-				# i.e. we now have an estimation on the obstacles location (for real time ellipse estimation we would do this here)
-
-		#----------- Calculate delta_p, delta_v, and delta_a-----------------------------------
-				# telem = get_telemetry(frame_id='map')
-				# delta_p = np.array([self.clover_pose.position.x-self.xc, self.clover_pose.position.y-self.yc])
-				# delta_v = np.array([telem.vx-0, telem.vy-0]) # static obstacle assumption for now
-
-				# # Calculate norms
-				# norm_delta_p = np.linalg.norm(delta_p, ord=2)  # Euclidean norm
-				# norm_delta_v = np.linalg.norm(delta_v, ord=2)  # Euclidean norm
-
-				# # constants
-				# q1 = 12#15
-				# q2 = 9#10
-				# r = self.SF + max(self.a_fit, self.b_fit)
-
-				# self.psi_0 = norm_delta_p - r
-				# self.psi_1 = (np.dot(delta_p, delta_v)) / norm_delta_p + q1*(self.psi_0)
-
-				# psi_0.append(self.psi_0)
-				# psi_1.append(self.psi_1)
-		#--------------------------------------------------------------------------------------------
-
+		
 				# Log the fist velocity field update reading
 				if self.count: 
 					x_field[:,:] = self.XX # Assign XX to x_field, assuming XX and x_field have the same shape
@@ -899,6 +933,22 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 					# Get the actual time:
 					current_time = rospy.Time.now()
+
+					if self.obstacle_counter == 1:
+						xa1.append(self.x_local)
+						ya1.append(y_local)
+						x_cur1.append(x_clover)
+						y_cur1.append(y_clover)
+						yaw1.append(yaw)
+						time1.append(current_time.to_sec())
+
+					else:
+						xa2.append(self.x_local)
+						ya2.append(y_local)
+						x_cur2.append(x_clover)
+						y_cur2.append(y_clover)
+						yaw2.append(yaw)
+						time2.append(current_time.to_sec())
 
 							#-------------External LOG------------------
 					# Create a group to store velocity field for this iteration/time
@@ -947,7 +997,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 
 				
-				print(self.obstacle_counter)
+				# print(self.obstacle_counter)
 				
 				for j in range(self.N_horizon): # Up to N-1
 					# An obstacle was detected, use the obstacle_counter number
@@ -1326,6 +1376,70 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			xc, yc, a_fit, b_fit, theta, psi_0, psi_1 = w.ellipse_calc(xac,yac, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe)
 
 
+			a1 = vortex()
+			g_sink = 2.4
+			xsi = 20 # 20
+			ysi = 20 # 20
+			g_source = 0.9
+			xs = -0.1
+			ys = -0.1
+			g_clover = 0.0
+			U_inf = 0
+			V_inf = 0
+			lidar_angles = np.linspace(-180*(math.pi/180), 180*(math.pi/180), 360) # Adjust this number based on number defined in XACRO!!!!!
+
+			# print(len(xa1))
+			# print(xa1[0])
+			# print(yaw1)
+			# print(len(x_cur1))
+			xa_e1,ya_e1,xa_orig1,ya_orig1,Vxe1,Vye1, extendedX1, extendedY1, int_X1, int_Y1 = a1.VPM_calc(xa1,ya1,x_cur1,y_cur1, yaw1, U_inf, V_inf, g_source, g_sink, xs, ys, xsi, ysi, g_clover,lidar_angles)
+
+			xa_e2,ya_e2,xa_orig2,ya_orig2,Vxe2,Vye2, extendedX2, extendedY2, int_X2, int_Y2 = a1.VPM_calc(xa2,ya2,x_cur2,y_cur2, yaw2, U_inf, V_inf, g_source, g_sink, xs, ys, xsi, ysi, g_clover,lidar_angles)
+
+			#-------------External LOG------------------
+            # Create a group to store velocity field for this iteration/time
+			iteration_group = hf.create_group('VPM_update_cylindar1')
+			# iteration_group.create_dataset('XX', data=self.XX)
+			# iteration_group.create_dataset('YY', data=self.YY)
+			iteration_group.create_dataset('Vxe', data=Vxe1)
+			iteration_group.create_dataset('Vye', data=Vye1)
+			iteration_group.create_dataset('xa_extend', data=xa_e1)
+			iteration_group.create_dataset('ya_extend', data=ya_e1)
+			iteration_group.create_dataset('xa_orig', data=xa_orig1)
+			iteration_group.create_dataset('ya_orig', data=ya_orig1)
+			# Log the trail edge kutta condition point (extended off of the extended readings, in the global frame)
+			iteration_group.create_dataset('x_trail', data=extendedX1)
+			iteration_group.create_dataset('y_trail', data=extendedY1)
+			# log the intuitive position of the trail point (where you think it should be for the results that come from it)
+			iteration_group.create_dataset('x_trail_intuitive', data=int_X1)
+			iteration_group.create_dataset('y_trail_intuitive', data=int_Y1)
+			# log the current clover position as well for plotting marker location on map plot
+			iteration_group.create_dataset('x_clover_cur', data=x_cur1)
+			iteration_group.create_dataset('y_clover_cur', data=y_cur1)
+			iteration_group.create_dataset('time_actual', data=time1)
+
+			#-------------External LOG------------------
+            # Create a group to store velocity field for this iteration/time
+			iteration_group = hf.create_group('VPM_update_cylindar2')
+			# iteration_group.create_dataset('XX', data=self.XX)
+			# iteration_group.create_dataset('YY', data=self.YY)
+			iteration_group.create_dataset('Vxe', data=Vxe2)
+			iteration_group.create_dataset('Vye', data=Vye2)
+			iteration_group.create_dataset('xa_extend', data=xa_e2)
+			iteration_group.create_dataset('ya_extend', data=ya_e2)
+			iteration_group.create_dataset('xa_orig', data=xa_orig2)
+			iteration_group.create_dataset('ya_orig', data=ya_orig2)
+			# Log the trail edge kutta condition point (extended off of the extended readings, in the global frame)
+			iteration_group.create_dataset('x_trail', data=extendedX2)
+			iteration_group.create_dataset('y_trail', data=extendedY2)
+			# log the intuitive position of the trail point (where you think it should be for the results that come from it)
+			iteration_group.create_dataset('x_trail_intuitive', data=int_X2)
+			iteration_group.create_dataset('y_trail_intuitive', data=int_Y2)
+			# log the current clover position as well for plotting marker location on map plot
+			iteration_group.create_dataset('x_clover_cur', data=x_cur2)
+			iteration_group.create_dataset('y_clover_cur', data=y_cur2)
+			iteration_group.create_dataset('time_actual', data=time2)
+
 
 			#-------------External LOG------------------
 			# Create a group to store velocity field for this iteration/time
@@ -1463,14 +1577,16 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			fig = plt.figure(4)
 			plt.cla()
 			np.seterr(under="ignore")
-			plt.streamplot(x_field,y_field,u_field,v_field,linewidth=1.0,density=40,color='r',arrowstyle='-',start_points=XYsl) # density = 40
+			# plt.streamplot(x_field,y_field,u_field,v_field,linewidth=1.0,density=40,color='r',arrowstyle='-',start_points=XYsl) # density = 40
+			plt.streamplot(x_field,y_field,Vxe1,Vye1,linewidth=1.0,density=40,color='r',arrowstyle='-',start_points=XYsl)
 			plt.grid(True)
 			#plt.plot(XX,YY,marker='o',color='blue')
 			plt.axis('equal')
 			plt.xlim(xVals)
 			plt.ylim(yVals)
-			plt.plot(lidar_x, lidar_y,'-o' ,color = 'k',linewidth = 0.25)
+			plt.plot(xa_e1, ya_e1,'-o' ,color = 'k',linewidth = 0.25)
 			plt.plot(xf,yf,'b',label='x-fol') # path taken by clover
+			plt.plot(extendedX1, extendedY1, 'o')
 			ellipse = Ellipse(xy=(xc[0],yc[0]), width=2*a_fit[0], height=2*b_fit[0], angle=np.rad2deg(theta[0]),
 			edgecolor='b', fc='None', lw=2)
 			plt.gca().add_patch(ellipse)
