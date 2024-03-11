@@ -88,17 +88,27 @@ y_obs=[]
 vy_obs=[]
 ay_obs=[]
 
+# Analyze observer for obstacle 2
+x_obs2=[]
+vx_obs2=[]
+ax_obs2=[]
+
+y_obs2=[]
+vy_obs2=[]
+ay_obs2=[]
+
 
 # Log the time for the position control variables
 time_now = []
 time_obs = []
+time_obs2 = []
 
 # Get the path to the directory containing the Python script
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
 # Create a HDF5 file name
 # Open the HDF5 file globally
-file_name = 'set_obs2.h5'
+file_name = 'set_obs7.h5'
 
 # Construct the absolute path to the HDF5 file
 absolute_file_path = os.path.join(script_dir, file_name)
@@ -137,7 +147,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			self.RATE            =  RATE#self.N_horizon/self.T_horizon # i think this makes sense, because dt = self.T_horizon/self.N_horizon
 			self.RADIUS          = RADIUS                   # radius of figure 8 in meters
 			self.CYCLE_S         = CYCLE_S                  # time to complete one figure 8 cycle in seconds
-			self.CYCLE_C         = 9              # Cycle time for the circle
+			self.CYCLE_C         = 7.7              # Cycle time for the circle
 			self.STEPS           = int( self.CYCLE_S * self.RATE )
 			self.STEPS_C           = int( self.CYCLE_C * self.RATE )
 			self.FRAME           = REF_FRAME                # Reference frame for complex trajectory tracking
@@ -186,7 +196,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			dadt = math.pi*2 / self.CYCLE_S # first derivative of angle with respect to time
 			dadt_c = math.pi*2 / self.CYCLE_C # first derivative of angle with respect to time
 			r    = self.RADIUS		# Set the radius of the figure-8
-			rc = 2.0 # radius of the circle
+			rc = 2.25 # radius of the circle
 			path = []
 			
 
@@ -471,6 +481,17 @@ with h5py.File(absolute_file_path, 'a') as hf:
 					y2hat2 = self.y2hat_cur2 + dt*(self.y3hat_cur2 + L2*(abs(posy2[q]  - self.y1hat_cur2)**(1/3))*np.sign(posy2[q] -self.y1hat_cur2))
 					y3hat2 = self.y3hat_cur2 + dt*(L3*np.sign(posy2[q] -self.y1hat_cur2))
 
+					x_obs2.append(x1hat2)
+					vx_obs2.append(x2hat2)
+					ax_obs2.append(x3hat2)
+					y_obs2.append(y1hat2)
+					vy_obs2.append(y2hat2)
+					ay_obs2.append(y3hat2)
+					# Get the actual time:
+					current_time = rospy.Time.now()
+					time_obs2.append(current_time.to_sec())
+
+
 					# Publish state estimation to the main node file for use in the MPC
 					obs_pub2.x = posx2[q] # send in the actual position values to the main script, not the estimation
 					obs_pub2.y = posy2[q] 
@@ -547,7 +568,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 	if __name__ == '__main__':
 		try:
 			# Define the performance parameters here which starts the script
-			q=clover(FLIGHT_ALTITUDE = 1.749502, RATE = 50, RADIUS = 1.6, CYCLE_S = 8, REF_FRAME = 'aruco_map', N_horizon = 25, T_horizon = 5) # cycle = 25for slow obstacle radius = 3.3
+			q=clover(FLIGHT_ALTITUDE = 1.749502, RATE = 50, RADIUS = 3.8, CYCLE_S = 8.5, REF_FRAME = 'aruco_map', N_horizon = 25, T_horizon = 5) # cycle = 25for slow obstacle radius = 3.3 # radius = 1.6
 			
 			q.main()
 
@@ -581,6 +602,14 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			iteration_group.create_dataset('vy_obs', data=vy_obs)
 			iteration_group.create_dataset('ax_obs', data=ax_obs)
 			iteration_group.create_dataset('ay_obs', data=ay_obs)
+			#time_now = np.array(time_now)
+			iteration_group.create_dataset('time_now1', data=time_obs)
+			iteration_group.create_dataset('x_obs2', data=x_obs2)
+			iteration_group.create_dataset('y_obs2', data=y_obs2)
+			iteration_group.create_dataset('vx_obs2', data=vx_obs2)
+			iteration_group.create_dataset('vy_obs2', data=vy_obs2)
+			iteration_group.create_dataset('ax_obs2', data=ax_obs2)
+			iteration_group.create_dataset('ay_obs2', data=ay_obs2)
 			#time_now = np.array(time_now)
 			iteration_group.create_dataset('time_now', data=time_obs)
 			# Debug section, need matplotlib to plot the results for SITL

@@ -46,6 +46,9 @@ from tf.transformations import euler_from_quaternion
 
 rospy.init_node('MPC_final')
 
+# Set the use_sim_time parameter to true
+rospy.set_param('use_sim_time', True)
+
 get_telemetry = rospy.ServiceProxy('get_telemetry', srv.GetTelemetry)
 navigate = rospy.ServiceProxy('navigate', srv.Navigate)
 navigate_global = rospy.ServiceProxy('navigate_global', srv.NavigateGlobal)
@@ -180,7 +183,7 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 
 # Create a HDF5 file name
 # Open the HDF5 file globally
-file_name = 'mpc_static_test.h5' # 'mpc_static.h5'
+file_name = 'mpc_dynamic_test7.h5' # 'mpc_static.h5'
 
 # Construct the absolute path to the HDF5 file
 absolute_file_path = os.path.join(script_dir, file_name)
@@ -516,7 +519,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				q1 = 15#15
 				q2 = 10#10
 				#print(max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8)) # woow, some pretty unstacle shapes come out of this on the prism
-				r = self.SF + max(ellipse_model.params[2], ellipse_model.params[3])#self.cyl_rad #max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8) # make sure it is at least giving 0.8, where the max prism radius is 1.25 i believe
+				r = self.SF + 1.5#max(ellipse_model.params[2], ellipse_model.params[3])#self.cyl_rad #max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8) # make sure it is at least giving 0.8, where the max prism radius is 1.25 i believe
 
 				self.psi_0p = norm_delta_p - r
 				self.psi_1p = (np.dot(delta_p, delta_v)) / norm_delta_p + q1*(self.psi_0p)
@@ -555,7 +558,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				# constants
 				q1 = 15#15
 				q2 = 10#10
-				r = self.SF + max(ellipse_model.params[2], ellipse_model.params[3])
+				r = self.SF + 1.5#max(ellipse_model.params[2], ellipse_model.params[3])
 
 				self.psi_0 = norm_delta_p - r
 				self.psi_1 = (np.dot(delta_p, delta_v)) / norm_delta_p + q1*(self.psi_0)
@@ -614,7 +617,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			self.v = 0
 
 			# Define the max velocity allowed for the Clover
-			self.vel_max = 0.65 # [m/s] 0.65
+			self.vel_max = 0.75 # [m/s] 0.65
 
 			# #-------------------- Offline Panel Calculations---------------------------------------------------
 
@@ -967,6 +970,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				# do this so we can calculate psi_0 and psi_1 based on the ellipse readings. Hopefully will calculate this
 				# in real time when we get to hardware in the lab
 				telem = get_telemetry(frame_id='map')
+				current_time = rospy.Time.now()
 				# Append row after row of data (to log readings)
 				if self.obstacle_counter == 1:
 					# append the readings of the cylinder
@@ -976,6 +980,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 					vx_ce.append(telem.vx)
 					y_ce.append(self.clover_pose.position.y)
 					vy_ce.append(telem.vy)
+					timec.append(current_time.to_sec())
 
 					# Log the lidar readings iteratively here for the cylinder
 					# Log obstacle detection for cylinder
@@ -989,6 +994,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 					vx_pe.append(telem.vx)
 					y_pe.append(self.clover_pose.position.y)
 					vy_pe.append(telem.vy)
+					timep.append(current_time.to_sec())
 
 					# Log the lidar readings iteratively here for the prism
 					# Log obstacle detection for prism
@@ -1462,6 +1468,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			iteration_group.create_dataset('psi_0p', data=psi_0p)
 			iteration_group.create_dataset('psi_1p', data=psi_1p)
 			iteration_group.create_dataset('r_cyl', data=r_cyl)
+			iteration_group.create_dataset('time_now', data=timep)
 
 
 			iteration_group = hf.create_group('LiDar_figure8_results')
@@ -1479,6 +1486,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			iteration_group.create_dataset('psi_0', data=psi_0)
 			iteration_group.create_dataset('psi_1', data=psi_1)
 			iteration_group.create_dataset('r_cyl', data=r_rec)
+			iteration_group.create_dataset('time_now', data=timec)
 
 			#-------------External LOG------------------
             # Create a group to store the control variables over the simulation
