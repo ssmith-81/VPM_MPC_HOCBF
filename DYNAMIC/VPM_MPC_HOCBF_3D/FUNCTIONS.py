@@ -45,7 +45,7 @@ def acados_settings(N_horizon, T_horizon):
 		# R = np.array([ 1e-4, 1e-4, 1e-4]) # Three control inputs acceleration
 		#Q = np.array([ 1000, 0, 1500, 0, 1500, 0]) # Assuming there are only 3 state outputs, State = [x, vx, y, vy, z, vz]
 		Q = np.array([ 0, 100, 0, 100, 50, 30]) # 50-80 80-100 in position 40-50 on velocity
-		Q_e = np.array([ 0, 100, 0, 100, 50, 30])
+		Q_e = np.array([ 0, 100, 0, 100, 30, 80])
 		R = np.array([ 5, 5, 5]) # 5 is good
 		
 
@@ -79,7 +79,7 @@ def acados_settings(N_horizon, T_horizon):
 		ocp.constraints.x0 = x_ref # initial state (not sure) translated internally to idxbx_0, lbx_0, ubx_0, idxbxe_0
 
 		# Initialize the state of the target obstacle (this will be overwritten later, just initializing it right now) -> sets the model.p values define in model defintion
-		ocp.parameter_values = np.array([0.0,0.0,0.0, 0.0, 0.0, 0.0, 0.0]) # State = [x, vx, ax, y, vy, ay, robs]
+		ocp.parameter_values = np.array([0.0,0.0,0.0, 0.0, 0.0, 0.0,0.0,0.0,0.0, 0.0]) # State = [x, vx, ax, y, vy, ay,z, vz, az, robs]
 
         # https://docs.acados.org/python_interface/index.html#acados_template.acados_ocp.AcadosOcpConstraints
         # constraints u = [ux,uy,uz] -> acceleration commands
