@@ -94,16 +94,34 @@ ycp = []
 a_fitp = []
 b_fitp = []
 thetap = []
-# Correspond to cylinder
+# drone dynamics Correspond to obstacle 1
 x_ce = [] # these ones are for logging position/velocity corresponding to the lidar measurements
 y_ce = [] # so we can calculate psi_0 and psi_1 offline or after the simulation
+z_ce = []
 vx_ce = []
 vy_ce = []
-# Correspond to prism
+vz_ce = []
+# obstacle 1
+xc_obs = []
+vx_obsc = []
+yc_obs = []
+vy_obsc = []
+zc_obs = []
+vz_obsc = []
+# Correspond to obstacle 2
 x_pe = [] # these ones are for logging position/velocity corresponding to the lidar measurements
 y_pe = [] # so we can calculate psi_0 and psi_1 offline or after the simulation
+z_pe = []
 vx_pe = []
 vy_pe = []
+vz_pe = []
+# obstacle 2
+xp_obs = []
+vx_obsp = []
+yp_obs = []
+vy_obsp = []
+zp_obs = []
+vz_obsp = []
 
 # readings of the non-modified/original obstacle1
 xa_orig1 = []
@@ -480,7 +498,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 	class ellipse:
 
-		def ellipse_calc(self,xac,yac, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe):
+		def ellipse_calc(self, x_ce, vx_ce, y_ce, vy_ce,z_ce, vz_ce, xc_obs,vx_obsc,yc_obs,vy_obsc,zc_obs,vz_obsc, x_pe, vx_pe, y_pe, vy_pe,z_pe, vz_pe,xp_obs, vx_obsp,yp_obs,vy_obsp,zp_obs,vz_obsp):
 
 			# This function is used to calculate the psi 0 ans 1 values for this 3D simulation case
 
@@ -495,19 +513,13 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			# Doing the cylinder and prism seperately because the prism is giving straneg results on psi_1
 
 			# Iterate over rows of data (for the prism)
-			for i, (xa_row, ya_row) in enumerate(zip(xap, yap)):
+			for i, (xa_row, ya_row) in enumerate(zip(xap, yap)): # fix this for loop statement
 				# Ellipse model-------------------------
 				xy = np.column_stack((xa_row, ya_row))
-				ellipse_model = EllipseModel()
-				ellipse_model.estimate(xy)
-
-				# If ellipse_model.params is None, skip this iteration
-				if ellipse_model.params is None:
-					continue
 
 				#----------- Calculate delta_p, delta_v, and delta_a-----------------------------------
-				delta_p = np.array([x_pe[i]-ellipse_model.params[0], y_pe[i]-ellipse_model.params[1]])
-				delta_v = np.array([vx_pe[i]-0, vy_pe[i]-0]) # static obstacle assumption for now
+				delta_p = np.array([x_pe[i] - xp_obs[i], y_pe[i]-yp_obs[i], z_pe[i] - zp_obs[i]])
+				delta_v = np.array([vx_pe[i]-vx_obsp[i], vy_pe[i]-vy_obsp[i],vz_pe[i]-vz_obsp[i]]) # static obstacle assumption for now
 
 				# Calculate norms
 				norm_delta_p = np.linalg.norm(delta_p, ord=2)  # Euclidean norm
@@ -535,19 +547,13 @@ with h5py.File(absolute_file_path, 'a') as hf:
 		#--------------------------------------------------------------------------------------------
 
 			# Iterate over rows of data (for the cylinder)
-			for i, (xa_row, ya_row) in enumerate(zip(xac, yac)):#, x_ce, vx_ce, y_ce, vy_ce):
+			for i, (xa_row, ya_row) in enumerate(zip(xac, yac)):# fix this for loop statement
 				# Ellipse model-------------------------
 				xy = np.column_stack((xa_row, ya_row))
-				ellipse_model = EllipseModel()
-				ellipse_model.estimate(xy)
-
-				# If ellipse_model.params is None, skip this iteration
-				if ellipse_model.params is None:
-					continue
 
 				#----------- Calculate delta_p, delta_v, and delta_a-----------------------------------
-				delta_p = np.array([x_ce[i]-ellipse_model.params[0], y_ce[i]-ellipse_model.params[1]])
-				delta_v = np.array([vx_ce[i]-0, vy_ce[i]-0]) # static obstacle assumption for now
+				delta_p = np.array([x_ce[i]-xc_obs[i], y_ce[i]-yc_obs[i],z_ce[i] - zc_obs[i]])
+				delta_v = np.array([vx_ce[i]-vx_obsc[i], vy_ce[i]-vy_obsc[i], vz_ce[i]-vz_obsc[i]]) # static obstacle assumption for now
 
 				# Calculate norms
 				norm_delta_p = np.linalg.norm(delta_p, ord=2)  # Euclidean norm
@@ -847,176 +853,47 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			# Ensure there are actually lidar readings, no point in doing calculations if
 			# nothing is detected:
 			# Need to add a lidar detection threshold for ellipsoid estimation, so if we have like 1-2 or low detection we could get bad results
-			if sum(not np.isinf(range_val) for range_val in self.obs_detect) >= 4 and z_clover >= 0.65: # want the drone to be at some altitude so we are not registering ground detections
-			
+			if x_clover < 10 and y_clover < 10:
 
-				# The angles and ranges start at -180 degrees i.e. at the right side, then go counter clockwise up to the top i.e. 180 degrees
-				self.ranges = data.ranges
-
-				angles = self.lidar_angles
-
-				# Get current state of this follower 
-				# telem = get_telemetry(frame_id='map')
-				x_clover = self.clover_pose.position.x
-				y_clover = self.clover_pose.position.y
-				z_clover = self.clover_pose.position.z
-				quaternion = [self.clover_pose.orientation.w,self.clover_pose.orientation.x, self.clover_pose.orientation.y, self.clover_pose.orientation.z ]
-				euler_angles = euler_from_quaternion(quaternion)
-				roll = euler_angles[2] #+ math.pi
-				yaw = -euler_angles[0]+math.pi 
-				pitch = euler_angles[1]
-
-
-				# Convert ranges to a NumPy array if it's not already
-				self.ranges = np.array(self.ranges)
-
-
-				# Polar to Cartesion transformation for all readings (assuming angles are in standard polar coordinates) y-axis is left and x-axis is directly forward.
-				self.x_local = self.ranges*np.cos(angles)
-				y_local = self.ranges*np.sin(angles)
-
-				# This transforms to the local Lidar frame where the y-axis is forward
-				# and the x-axis is pointing right:
-				# x_local = ranges*np.sin(angles)
-				# x_local = np.multiply(x_local,-1)
-				# y_local = ranges*np.cos(angles)
-
-				#------------------2D transformations--------------------
-				# Homogenous transformation matrix for 2D
-				R = np.array([[math.cos(yaw), -math.sin(yaw)], [math.sin(yaw), math.cos(yaw)]]) # rotation matrix
-				T = np.vstack([np.hstack([R, np.array([[x_clover], [y_clover]])]),[0,0,1]]) # Homogenous transformation matrix
-
-				# Lidar readings in homogenous coordinates
-				readings_local = np.vstack([self.x_local, y_local, np.ones_like(self.x_local)])
-
-				# Transform all lidar readings to global coordinates
-				self.readings_global = np.dot(T, readings_local)
-
-				# Extract the tranformed positions
-				self.readings_global = self.readings_global[:2,:].T
-
-				# Update the lidar detection readings
-				self.xa = self.readings_global[:,0].T
-				self.ya = self.readings_global[:,1].T
-
-				# Filter out the inf values in the data point arrays
-				self.xa = self.xa[np.isfinite(self.xa)]
-				self.ya = self.ya[np.isfinite(self.ya)]
-	
-	#-----------------------------------------------------------------------------------------------------------------
-				# # Append row after row of data (to log readings)
-				# xa.append(self.xa.tolist())
-				# ya.append(self.ya.tolist())
-
-				# # Log the Clover position and velocity at the same time we are logging this lidar data reading
-				# # do this so we can calculate psi_0 and psi_1 based on the ellipse readings. Hopefully will calculate this
-				# # in real time when we get to hardware in the lab
-				# telem = get_telemetry(frame_id='map')
-				# x_ce.append(self.clover_pose.position.x)
-				# vx_ce.append(telem.vx)
-				# y_ce.append(self.clover_pose.position.y)
-				# vy_ce.append(telem.vy)
-				
-
-				
-
-		
-				# Log the fist velocity field update reading
-				if self.count: 
-					x_field[:,:] = self.XX # Assign XX to x_field, assuming XX and x_field have the same shape
-					y_field[:,:] = self.YY
-					u_field[:,:] = self.Vxe
-					v_field[:,:] = self.Vye
-					lidar_x.append(self.xa)
-					lidar_y.append(self.ya)
-					
-
-					# update the flag variable (turn off so we only log the first update/obstacle reading)
-					self.count = False
-				
-				if not self.object_detect:
-					self.obstacle_counter +=1 # this only increments when an obstacle was detected once
-											# so it will be equal to 1 for the cylinder and equal to 2 for the prism
-					self.object_detect = True # Update object detected flag
-
-					# Get the actual time:
-					current_time = rospy.Time.now()
-
-					if self.obstacle_counter == 1:
-						xa1.append(self.x_local)
-						ya1.append(y_local)
-						x_cur1.append(x_clover)
-						y_cur1.append(y_clover)
-						yaw1.append(yaw)
-						time1.append(current_time.to_sec())
-
-					else:
-						xa2.append(self.x_local)
-						ya2.append(y_local)
-						x_cur2.append(x_clover)
-						y_cur2.append(y_clover)
-						yaw2.append(yaw)
-						time2.append(current_time.to_sec())
-
-							#-------------External LOG------------------
-					# Create a group to store velocity field for this iteration/time
-					iteration_group = hf.create_group(f'Obstacle_detect_iteration_{self.lidar_timestamp}')
-					iteration_group.create_dataset('XX', data=self.XX)
-					iteration_group.create_dataset('YY', data=self.YY)
-					iteration_group.create_dataset('xa_orig', data=self.xa)
-					iteration_group.create_dataset('ya_orig', data=self.ya)
-					# log the current clover position as well for plotting marker location on map plot
-					iteration_group.create_dataset('x_clover_cur', data=self.clover_pose.position.x)
-					iteration_group.create_dataset('y_clover_cur', data=self.clover_pose.position.y)
-					iteration_group.create_dataset('time_actual', data=current_time.to_sec())
-
-
-				# Log the Clover position and velocity at the same time we are logging this lidar data reading
-				# do this so we can calculate psi_0 and psi_1 based on the ellipse readings. Hopefully will calculate this
-				# in real time when we get to hardware in the lab
 				telem = get_telemetry(frame_id='map')
 				current_time = rospy.Time.now()
-				# Append row after row of data (to log readings)
-				if self.obstacle_counter == 1:
-					# append the readings of the cylinder
-					xac.append(self.xa.tolist())
-					yac.append(self.ya.tolist())
-					x_ce.append(self.clover_pose.position.x) # current clover state of reading
-					vx_ce.append(telem.vx)
-					y_ce.append(self.clover_pose.position.y)
-					vy_ce.append(telem.vy)
-					timec.append(current_time.to_sec())
-
-					# Log the lidar readings iteratively here for the cylinder
-					# Log obstacle detection for cylinder
-					lidar_cylinder.create_dataset(f'xac_{self.lidar_timestamp}', data=self.xa)
-					lidar_cylinder.create_dataset(f'yac_{self.lidar_timestamp}', data=self.ya)
-				else:
-					# append the readings of the cylinder
-					xap.append(self.xa.tolist())
-					yap.append(self.ya.tolist())
-					x_pe.append(self.clover_pose.position.x)
-					vx_pe.append(telem.vx)
-					y_pe.append(self.clover_pose.position.y)
-					vy_pe.append(telem.vy)
-					timep.append(current_time.to_sec())
-
-					# Log the lidar readings iteratively here for the prism
-					# Log obstacle detection for prism
-					lidar_prism.create_dataset(f'xap_{self.lidar_timestamp}', data=self.xa)
-					lidar_prism.create_dataset(f'yap_{self.lidar_timestamp}', data=self.ya)
-
-
+				# Append the Clover position and veloicty in the first quadrant corresponding to obstacle 1
+				x_ce.append(self.clover_pose.position.x) # current clover state of reading
+				vx_ce.append(telem.vx)
+				y_ce.append(self.clover_pose.position.y)
+				vy_ce.append(telem.vy)
+				z_ce.append(self.clover_pose.position.z)
+				vz_ce.append(telem.vz)
+				# append the obstacle dynamics
+				xc_obs.append(self.obs_x1[0])
+				vx_obsc.append(self.obs_vx1[0])
+				yc_obs.append(self.obs_y1[0])
+				vy_obsc.append(self.obs_vy1[0])
+				zc_obs.append(self.obs_z1[0])
+				vz_obsc.append(self.obs_vz1[0])
 				
-				
+				timec.append(current_time.to_sec())
 
 			else:
-				
-				self.object_detect = False # Update object detected flag
 
-				self.ellipse_first = False # This will ensure that when a new obstacle is detected, and it goes into
-				# the if statement above, a calculation will be run once.
-			
+				# append clover dynamics for calculations for second obstacle in the second quadrant
+				telem = get_telemetry(frame_id='map')
+				current_time = rospy.Time.now()
+				x_pe.append(self.clover_pose.position.x)
+				vx_pe.append(telem.vx)
+				y_pe.append(self.clover_pose.position.y)
+				vy_pe.append(telem.vy)
+				z_pe.append(self.clover_pose.position.z)
+				vz_pe.append(telem.vz)
+				# append the obstacle dynamics
+				xp_obs.append(self.obs_x2[0])
+				vx_obsp.append(self.obs_vx2[0])
+				yp_obs.append(self.obs_y2[0])
+				vy_obsp.append(self.obs_vy2[0])
+				zp_obs.append(self.obs_z2[0])
+				vz_obsp.append(self.obs_vz2[0])
+				timep.append(current_time.to_sec())
+
 
 		def controller(self,data):
 
@@ -1074,7 +951,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 				
 
-		def main(self):#,x=0, y=0, z=2, yaw = float('nan'), speed=1, frame_id ='',auto_arm = True,tolerance = 0.2):
+		def main(self):
 			
 
 			# Wait for 3 seconds
@@ -1184,7 +1061,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				target.position.y = x1[2]
 				target.position.z = x1[4]
 				
-				# Gather velocity for publishing
+				
 				# Gather velocity for publishing
 				target.velocity.x = x0[1]
 				target.velocity.y = x0[3]
