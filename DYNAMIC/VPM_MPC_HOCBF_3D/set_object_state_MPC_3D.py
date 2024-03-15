@@ -275,7 +275,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				posx[i] = (R+r_torus*c)*c + 7
 				# https:#www.wolframalpha.com/input/?i=%28r*cos%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29
 				posy[i] =  (R+r_torus*c)*s + 7
-				posz[i] =  r_torus*s +4.0
+				posz[i] =  r_torus*s +5.0
 
 				# Velocity (torus)
 				# https:#www.wolframalpha.com/input/?i=derivative+of+%28-r*cos%28a%29*sin%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29+wrt+a
@@ -641,7 +641,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 	if __name__ == '__main__':
 		try:
 			# Define the performance parameters here which starts the script
-			q=clover(FLIGHT_ALTITUDE = 1.749502, RATE = 50, RADIUS = 1.1, CYCLE_S = 5.5, REF_FRAME = 'aruco_map', N_horizon = 25, T_horizon = 5) # cycle = 25for slow obstacle radius = 3.3 # radius = 1.6
+			q=clover(FLIGHT_ALTITUDE = 1.749502, RATE = 50, RADIUS = 1.1, CYCLE_S = 4.8, REF_FRAME = 'aruco_map', N_horizon = 25, T_horizon = 5) # cycle = 25for slow obstacle radius = 3.3 # radius = 1.6
 			
 			q.main()
 

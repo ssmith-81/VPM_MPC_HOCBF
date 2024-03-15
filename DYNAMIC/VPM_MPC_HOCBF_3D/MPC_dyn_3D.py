@@ -520,7 +520,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 			
 			# Iterate over rows of data (for the second obstacle)
-			for i in range(len(xc_obs)): # x_pe
+			for i in range(len(xp_obs)): # x_pe
 				
 
 				#----------- Calculate delta_p, delta_v, and delta_a-----------------------------------
@@ -551,9 +551,9 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				# thetap.append(ellipse_model.params[4])
 
 		#--------------------------------------------------------------------------------------------
-
+			
 			# Iterate over rows of data (for the first obstacle)
-			for i in range(len(xp_obs)): # x_ce
+			for i in range(len(xc_obs)): # x_ce
 				
 				#----------- Calculate delta_p, delta_v, and delta_a-----------------------------------
 				delta_p = np.array([x_ce[i]-xc_obs[i], y_ce[i]-yc_obs[i],z_ce[i] - zc_obs[i]])
@@ -590,7 +590,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 	class clover:
 
-		def __init__(self, FLIGHT_ALTITUDE = 2.2, RATE = 50, RADIUS = 3.5, V_des = 0.6, N_horizon=25, T_horizon=5.0, REF_FRAME = 'map'): # rate = 50hz radius = 5m cycle_s = 25 N_h = 25, T_h = 5
+		def __init__(self, FLIGHT_ALTITUDE = 3.2, RATE = 50, RADIUS = 3.5, V_des = 0.6, N_horizon=25, T_horizon=5.0, REF_FRAME = 'map'): # rate = 50hz radius = 5m cycle_s = 25 N_h = 25, T_h = 5
 
 			# Note on N_horizon and T_horizon: with how I have things now, set T_horizon higher to react quicker to obstacles, but if you increase, this increases the time ahead of the first shooting node some 
 			# which is which may increase speed some. N_horizon, increase to slow drone down some and react faster to obstacles. Lower, increases time to first shoting node and increases speed
@@ -801,19 +801,77 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 			self.clover_pose = msg.pose[index]
 
+		@long_callback
 		def AHOSMO_callback1(self, data):
-		# Probably need to set a condition when there are no estimations etc ( dont have to
-		# this is already handles in the AHOSMO module, where estimations are only provided when something is detected
-		# and if something isnt detected, the trivial case is publish in this script)
-			self.obs_x1 = data.x
-			self.obs_y1 = data.y
-			self.obs_z1 = data.z
-			self.obs_vx1 = data.vx
-			self.obs_vy1 = data.vy
-			self.obs_vz1 = data.vz
-			self.obs_ax1 = data.ax
-			self.obs_ay1 = data.ay
-			self.obs_az1 = data.az
+			if data is not None:  # Check if data is not None
+			# Probably need to set a condition when there are no estimations etc ( dont have to
+			# this is already handles in the AHOSMO module, where estimations are only provided when something is detected
+			# and if something isnt detected, the trivial case is publish in this script)
+				self.obs_x1 = data.x
+				self.obs_y1 = data.y
+				self.obs_z1 = data.z
+				self.obs_vx1 = data.vx
+				self.obs_vy1 = data.vy
+				self.obs_vz1 = data.vz
+				self.obs_ax1 = data.ax
+				self.obs_ay1 = data.ay
+				self.obs_az1 = data.az
+				# Get current state of this follower 
+				# telem = get_telemetry(frame_id='map')
+				x_clover = self.clover_pose.position.x
+				y_clover = self.clover_pose.position.y
+				z_clover = self.clover_pose.position.z
+				quaternion = [self.clover_pose.orientation.w,self.clover_pose.orientation.x, self.clover_pose.orientation.y, self.clover_pose.orientation.z ]
+				euler_angles = euler_from_quaternion(quaternion)
+				roll = euler_angles[2] #+ math.pi
+				yaw = -euler_angles[0]+math.pi 
+				pitch = euler_angles[1]
+
+
+
+				# Ensure there are actually lidar readings, no point in doing calculations if
+				# nothing is detected:
+				# Need to add a lidar detection threshold for ellipsoid estimation, so if we have like 1-2 or low detection we could get bad results
+				if x_clover < 13 and y_clover < 13:
+
+					telem = get_telemetry(frame_id='map')
+					current_time = rospy.Time.now()
+					# Append the Clover position and veloicty in the first quadrant corresponding to obstacle 1
+					x_ce.append(self.clover_pose.position.x) # current clover state of reading
+					vx_ce.append(telem.vx)
+					y_ce.append(self.clover_pose.position.y)
+					vy_ce.append(telem.vy)
+					z_ce.append(self.clover_pose.position.z)
+					vz_ce.append(telem.vz)
+					# append the obstacle dynamics
+					xc_obs.append(self.obs_x1[0])
+					vx_obsc.append(self.obs_vx1[0])
+					yc_obs.append(self.obs_y1[0])
+					vy_obsc.append(self.obs_vy1[0])
+					zc_obs.append(self.obs_z1[0])
+					vz_obsc.append(self.obs_vz1[0])
+					
+					timec.append(current_time.to_sec())
+
+				else:
+
+					# append clover dynamics for calculations for second obstacle in the second quadrant
+					telem = get_telemetry(frame_id='map')
+					current_time = rospy.Time.now()
+					x_pe.append(self.clover_pose.position.x)
+					vx_pe.append(telem.vx)
+					y_pe.append(self.clover_pose.position.y)
+					vy_pe.append(telem.vy)
+					z_pe.append(self.clover_pose.position.z)
+					vz_pe.append(telem.vz)
+					# append the obstacle dynamics
+					xp_obs.append(self.obs_x2[0])
+					vx_obsp.append(self.obs_vx2[0])
+					yp_obs.append(self.obs_y2[0])
+					vy_obsp.append(self.obs_vy2[0])
+					zp_obs.append(self.obs_z2[0])
+					vz_obsp.append(self.obs_vz2[0])
+					timep.append(current_time.to_sec())
 			
 
 
@@ -853,50 +911,6 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			pitch = euler_angles[1]
 
 			
-
-			# Ensure there are actually lidar readings, no point in doing calculations if
-			# nothing is detected:
-			# Need to add a lidar detection threshold for ellipsoid estimation, so if we have like 1-2 or low detection we could get bad results
-			if x_clover < 13 and y_clover < 13:
-
-				telem = get_telemetry(frame_id='map')
-				current_time = rospy.Time.now()
-				# Append the Clover position and veloicty in the first quadrant corresponding to obstacle 1
-				x_ce.append(self.clover_pose.position.x) # current clover state of reading
-				vx_ce.append(telem.vx)
-				y_ce.append(self.clover_pose.position.y)
-				vy_ce.append(telem.vy)
-				z_ce.append(self.clover_pose.position.z)
-				vz_ce.append(telem.vz)
-				# append the obstacle dynamics
-				xc_obs.append(self.obs_x1[0])
-				vx_obsc.append(self.obs_vx1[0])
-				yc_obs.append(self.obs_y1[0])
-				vy_obsc.append(self.obs_vy1[0])
-				zc_obs.append(self.obs_z1[0])
-				vz_obsc.append(self.obs_vz1[0])
-				
-				timec.append(current_time.to_sec())
-
-			else:
-
-				# append clover dynamics for calculations for second obstacle in the second quadrant
-				telem = get_telemetry(frame_id='map')
-				current_time = rospy.Time.now()
-				x_pe.append(self.clover_pose.position.x)
-				vx_pe.append(telem.vx)
-				y_pe.append(self.clover_pose.position.y)
-				vy_pe.append(telem.vy)
-				z_pe.append(self.clover_pose.position.z)
-				vz_pe.append(telem.vz)
-				# append the obstacle dynamics
-				xp_obs.append(self.obs_x2[0])
-				vx_obsp.append(self.obs_vx2[0])
-				yp_obs.append(self.obs_y2[0])
-				vy_obsp.append(self.obs_vy2[0])
-				zp_obs.append(self.obs_z2[0])
-				vz_obsp.append(self.obs_vz2[0])
-				timep.append(current_time.to_sec())
 
 
 		def controller(self,data):
@@ -1372,7 +1386,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			plt.figure(7)
 			plt.plot(psi_0p,'r',label='psi_0p')
 			plt.plot(psi_1p,'b',label='psi_1p')
-			plt.ylim(-2, 30)
+			# plt.ylim(-2, 30)
 			plt.ylabel('b(x)')
 			plt.xlabel('Time [s]')
 			plt.legend()
