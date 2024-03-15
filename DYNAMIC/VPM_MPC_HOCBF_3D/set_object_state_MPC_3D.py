@@ -158,8 +158,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			self.dt_ref = int(self.N_steps/self.N_horizon) # This is the amount of steps ahead within the reference trajectory array, per iteration in the prediction horizon
 
 			# Torus curve parameters
-			self.R = 3.0
-			self.r_torus = 1.0
+			self.R = 2.0
+			self.r_torus = 0.7
 
 
 			# sink location
@@ -272,10 +272,10 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				
 				# Position (torus)
 				# https:#www.wolframalpha.com/input/?i=%28-r*cos%28a%29*sin%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29
-				posx[i] = (R+r_torus*c)*c + 8
+				posx[i] = (R+r_torus*c)*c + 7
 				# https:#www.wolframalpha.com/input/?i=%28r*cos%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29
-				posy[i] =  (R+r_torus*c)*s + 8
-				posz[i] =  r_torus*s +4
+				posy[i] =  (R+r_torus*c)*s + 7
+				posz[i] =  r_torus*s +4.0
 
 				# Velocity (torus)
 				# https:#www.wolframalpha.com/input/?i=derivative+of+%28-r*cos%28a%29*sin%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29+wrt+a
@@ -424,6 +424,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 						obs_extend1.az[i] = afz[index]
 					else:
 						# If index exceeds the length of the arrays, restart data setting from the beginning of the arrays
+						if j > self.N_horizon:
+							j=0
 						obs_extend1.x[i] = posx[j]
 						obs_extend1.y[i] = posy[j]
 						obs_extend1.z[i] = posz[j]
@@ -448,6 +450,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 						obs_extend2.az[i] = afz2[index2]
 					else:
 						# If index exceeds the length of the arrays, restart data setting from the beginning of the arrays
+						if w > self.N_horizon:
+							w=0
 						obs_extend2.x[i] = posx2[w]
 						obs_extend2.y[i] = posy2[w]
 						obs_extend2.z[i] = posz2[w]
@@ -637,7 +641,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 	if __name__ == '__main__':
 		try:
 			# Define the performance parameters here which starts the script
-			q=clover(FLIGHT_ALTITUDE = 1.749502, RATE = 50, RADIUS = 1.1, CYCLE_S = 6.5, REF_FRAME = 'aruco_map', N_horizon = 25, T_horizon = 5) # cycle = 25for slow obstacle radius = 3.3 # radius = 1.6
+			q=clover(FLIGHT_ALTITUDE = 1.749502, RATE = 50, RADIUS = 1.1, CYCLE_S = 5.5, REF_FRAME = 'aruco_map', N_horizon = 25, T_horizon = 5) # cycle = 25for slow obstacle radius = 3.3 # radius = 1.6
 			
 			q.main()
 

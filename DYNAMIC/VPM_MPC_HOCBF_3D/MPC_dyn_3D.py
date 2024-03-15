@@ -24,6 +24,8 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import path
+
+
 import os
 
 from clover import srv
@@ -69,9 +71,11 @@ PI_2 = math.pi/2
 # Debugging and logging
 xf = []  # This gathers the clover position
 yf = []
+zf = []
 # position command from MPC dyamic output
 xcom = []
 ycom = []
+zcom = []
 YawF = []
 YawC = []
 
@@ -149,9 +153,11 @@ time2  =[]
 # Analyze control input (see if error is being minimized )
 velfx=[]
 velfy=[]
+velfz = []
 # velocity command from MPC dynamic output
 velcx=[]
 velcy=[]
+velcz=[]
 # log velocity command from the VPM velocity field
 uVPM = []
 vVPM = []
@@ -503,7 +509,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			# This function is used to calculate the psi 0 ans 1 values for this 3D simulation case
 
 			#--------------Obstacle parameters-----------------------------
-			self.SF = 0.9 # safety factor distance from the obstcle (set as the width of the Clover)
+			self.SF = 1.0 # safety factor distance from the obstcle (set as the width of the Clover)
 			self.SFp = 1.2 # safety factor for prism
 			self.cyl_rad = 1.5 # [m] radius of the cylinder
 			self.rec_rad = 1.25 # [m] half of the longest side of the prism
@@ -512,10 +518,10 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 			# Doing the cylinder and prism seperately because the prism is giving straneg results on psi_1
 
-			# Iterate over rows of data (for the prism)
-			for i, (xa_row, ya_row) in enumerate(zip(xap, yap)): # fix this for loop statement
-				# Ellipse model-------------------------
-				xy = np.column_stack((xa_row, ya_row))
+			
+			# Iterate over rows of data (for the second obstacle)
+			for i in range(len(xc_obs)): # x_pe
+				
 
 				#----------- Calculate delta_p, delta_v, and delta_a-----------------------------------
 				delta_p = np.array([x_pe[i] - xp_obs[i], y_pe[i]-yp_obs[i], z_pe[i] - zp_obs[i]])
@@ -538,19 +544,17 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				psi_1p.append(self.psi_1p)
 				r_cyl.append(r)
 				# Extract parameters of the fitted ellipse
-				xcp.append(ellipse_model.params[0])
-				ycp.append(ellipse_model.params[1])
-				a_fitp.append(ellipse_model.params[2])
-				b_fitp.append(ellipse_model.params[3])
-				thetap.append(ellipse_model.params[4])
+				# xcp.append(ellipse_model.params[0])
+				# ycp.append(ellipse_model.params[1])
+				# a_fitp.append(ellipse_model.params[2])
+				# b_fitp.append(ellipse_model.params[3])
+				# thetap.append(ellipse_model.params[4])
 
 		#--------------------------------------------------------------------------------------------
 
-			# Iterate over rows of data (for the cylinder)
-			for i, (xa_row, ya_row) in enumerate(zip(xac, yac)):# fix this for loop statement
-				# Ellipse model-------------------------
-				xy = np.column_stack((xa_row, ya_row))
-
+			# Iterate over rows of data (for the first obstacle)
+			for i in range(len(xp_obs)): # x_ce
+				
 				#----------- Calculate delta_p, delta_v, and delta_a-----------------------------------
 				delta_p = np.array([x_ce[i]-xc_obs[i], y_ce[i]-yc_obs[i],z_ce[i] - zc_obs[i]])
 				delta_v = np.array([vx_ce[i]-vx_obsc[i], vy_ce[i]-vy_obsc[i], vz_ce[i]-vz_obsc[i]]) # static obstacle assumption for now
@@ -574,19 +578,19 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 
 				# Extract parameters of the fitted ellipse
-				xc.append(ellipse_model.params[0])
-				yc.append(ellipse_model.params[1])
-				a_fit.append(ellipse_model.params[2])
-				b_fit.append(ellipse_model.params[3])
-				theta.append(ellipse_model.params[4])
+				# xc.append(ellipse_model.params[0])
+				# yc.append(ellipse_model.params[1])
+				# a_fit.append(ellipse_model.params[2])
+				# b_fit.append(ellipse_model.params[3])
+				# theta.append(ellipse_model.params[4])
 			
 			# Return lists of ellipse parameters for each row of data
-			return xc, yc, a_fit, b_fit, theta, psi_0, psi_1
+			return psi_0, psi_1, r_rec, psi_0p, psi_1p, r_cyl
 
 
 	class clover:
 
-		def __init__(self, FLIGHT_ALTITUDE = 0.7, RATE = 50, RADIUS = 3.5, V_des = 0.6, N_horizon=25, T_horizon=5.0, REF_FRAME = 'map'): # rate = 50hz radius = 5m cycle_s = 25 N_h = 25, T_h = 5
+		def __init__(self, FLIGHT_ALTITUDE = 2.2, RATE = 50, RADIUS = 3.5, V_des = 0.6, N_horizon=25, T_horizon=5.0, REF_FRAME = 'map'): # rate = 50hz radius = 5m cycle_s = 25 N_h = 25, T_h = 5
 
 			# Note on N_horizon and T_horizon: with how I have things now, set T_horizon higher to react quicker to obstacles, but if you increase, this increases the time ahead of the first shooting node some 
 			# which is which may increase speed some. N_horizon, increase to slow drone down some and react faster to obstacles. Lower, increases time to first shoting node and increases speed
@@ -621,7 +625,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			self.v = 0
 
 			# Define the max velocity allowed for the Clover
-			self.vel_max = 0.75 # [m/s] 0.65
+			self.vel_max = 0.85 # [m/s] 0.65
 
 			# #-------------------- Offline Panel Calculations---------------------------------------------------
 
@@ -728,7 +732,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			
 
 			#--------------Obstacle parameters-----------------------------
-			self.SF = 0.9 # safety factor distance from the obstcle (set as the width of the Clover)
+			self.SF = 1.0 # safety factor distance from the obstcle (set as the width of the Clover)
 			self.cyl_rad = 1.5 # [m] radius of the cylinder
 			# Center of the cylinder location for experiment
 			self.x_cyl = 6.0
@@ -853,7 +857,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			# Ensure there are actually lidar readings, no point in doing calculations if
 			# nothing is detected:
 			# Need to add a lidar detection threshold for ellipsoid estimation, so if we have like 1-2 or low detection we could get bad results
-			if x_clover < 10 and y_clover < 10:
+			if x_clover < 13 and y_clover < 13:
 
 				telem = get_telemetry(frame_id='map')
 				current_time = rospy.Time.now()
@@ -1015,7 +1019,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 					self.acados_solver.set(j, "yref", yref)
 
 					# Check the drone's position and perform actions accordingly (within the first obstacle domain)
-					if x_clover < 10 and y_clover < 10:
+					if x_clover < 13 and y_clover < 13:
 
 						r = self.SF + self.cyl_rad
 
@@ -1023,13 +1027,13 @@ with h5py.File(absolute_file_path, 'a') as hf:
 						self.acados_solver.set(j, "p", np.array([self.obs_x1[j],self.obs_vx1[j],self.obs_ax1[j],self.obs_y1[j],self.obs_vy1[j],self.obs_ay1[j],self.obs_z1[j],self.obs_vz1[j],self.obs_az1[j], r])) # set the obstacle dynamics [x,vx,ax,y,vy,ay,z,vz,az] dynamic obstacle
 					
 					# Check the drone's position and perform actions accordingly (within the second obstacle domain)
-					elif x_clover >= 10 and y_clover >= 10:
+					elif x_clover >= 13 and y_clover >= 13:
 					# 	# Set the distance from the obstacle
 						
 						r = self.SF + self.cyl_rad
 						
-						self.acados_solver.set(j, "p", np.array([self.obs_x2[j],self.obs_vx2[j],self.obs_ax2[j],self.obs_y2[j],self.obs_vy2[j],self.obs_ay2[j],self.obs_z2[j],self.obs_vz2[j],self.obs_az2[j], r])) # set the obstacle dynamics [x,vx,ax,y,vy,ay,z,vz,az] dynamic obstacle
-
+						# self.acados_solver.set(j, "p", np.array([self.obs_x2[j],self.obs_vx2[j],self.obs_ax2[j],self.obs_y2[j],self.obs_vy2[j],self.obs_ay2[j],self.obs_z2[j],self.obs_vz2[j],self.obs_az2[j], r])) # set the obstacle dynamics [x,vx,ax,y,vy,ay,z,vz,az] dynamic obstacle
+						self.acados_solver.set(j, "p", np.array([40,0,0,40,0,0,40,0,0, r])) # Assuming a static obstacle far away
 					else:
    					 # Perform some default action if none of the conditions are met
 					
@@ -1110,8 +1114,10 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				# logging/debugging
 				xf.append(x_clover)
 				yf.append(y_clover)
+				zf.append(z_clover)
 				xcom.append(x0[0])
 				ycom.append(x0[2])
+				zcom.append(x0[4])
 				# evx.append(self.u-x_clover)
 				# evy.append(self.v-telem.vy)
 				eyaw.append(self.omega-yaw)
@@ -1121,8 +1127,10 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				#ydispf.append(self.d_yi)
 				velfx.append(telem.vx)
 				velfy.append(telem.vy)
+				velfz.append(telem.vz)
 				velcx.append(x0[1])
 				velcy.append(x0[3])
+				velcz.append(x0[5])
 				uVPM.append(self.u)
 				vVPM.append(self.v)
 				# U_infx.append(self.U_inf)
@@ -1200,72 +1208,9 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 			w = ellipse()
 
-			xc, yc, a_fit, b_fit, theta, psi_0, psi_1 = w.ellipse_calc(xac,yac, x_ce, vx_ce, y_ce, vy_ce, xap,yap, x_pe, vx_pe, y_pe, vy_pe)
+			psi_0, psi_1, r_rec, psi_0p, psi_1p, r_cyl = w.ellipse_calc(x_ce, vx_ce, y_ce, vy_ce,z_ce, vz_ce, xc_obs,vx_obsc,yc_obs,vy_obsc,zc_obs,vz_obsc, x_pe, vx_pe, y_pe, vy_pe,z_pe, vz_pe,xp_obs, vx_obsp,yp_obs,vy_obsp,zp_obs,vz_obsp)
 
 
-			a1 = vortex()
-			g_sink = 2.4
-			xsi = 20 # 20
-			ysi = 20 # 20
-			g_source = 0.9
-			xs = -0.1
-			ys = -0.1
-			g_clover = 0.0
-			U_inf = 0
-			V_inf = 0
-			lidar_angles = np.linspace(-180*(math.pi/180), 180*(math.pi/180), 360) # Adjust this number based on number defined in XACRO!!!!!
-
-			# print(len(xa1))
-			# print(xa1[0])
-			# print(yaw1)
-			# print(len(x_cur1))
-			xa_e1,ya_e1,xa_orig1,ya_orig1,Vxe1,Vye1, extendedX1, extendedY1, int_X1, int_Y1 = a1.VPM_calc(xa1,ya1,x_cur1,y_cur1, yaw1, U_inf, V_inf, g_source, g_sink, xs, ys, xsi, ysi, g_clover,lidar_angles)
-
-			xa_e2,ya_e2,xa_orig2,ya_orig2,Vxe2,Vye2, extendedX2, extendedY2, int_X2, int_Y2 = a1.VPM_calc(xa2,ya2,x_cur2,y_cur2, yaw2, U_inf, V_inf, g_source, g_sink, xs, ys, xsi, ysi, g_clover,lidar_angles)
-
-			#-------------External LOG------------------
-            # Create a group to store velocity field for this iteration/time
-			iteration_group = hf.create_group('VPM_update_cylindar1')
-			# iteration_group.create_dataset('XX', data=self.XX)
-			# iteration_group.create_dataset('YY', data=self.YY)
-			iteration_group.create_dataset('Vxe', data=Vxe1)
-			iteration_group.create_dataset('Vye', data=Vye1)
-			iteration_group.create_dataset('xa_extend', data=xa_e1)
-			iteration_group.create_dataset('ya_extend', data=ya_e1)
-			iteration_group.create_dataset('xa_orig', data=xa_orig1)
-			iteration_group.create_dataset('ya_orig', data=ya_orig1)
-			# Log the trail edge kutta condition point (extended off of the extended readings, in the global frame)
-			iteration_group.create_dataset('x_trail', data=extendedX1)
-			iteration_group.create_dataset('y_trail', data=extendedY1)
-			# log the intuitive position of the trail point (where you think it should be for the results that come from it)
-			iteration_group.create_dataset('x_trail_intuitive', data=int_X1)
-			iteration_group.create_dataset('y_trail_intuitive', data=int_Y1)
-			# log the current clover position as well for plotting marker location on map plot
-			iteration_group.create_dataset('x_clover_cur', data=x_cur1)
-			iteration_group.create_dataset('y_clover_cur', data=y_cur1)
-			iteration_group.create_dataset('time_actual', data=time1)
-
-			#-------------External LOG------------------
-            # Create a group to store velocity field for this iteration/time
-			iteration_group = hf.create_group('VPM_update_cylindar2')
-			# iteration_group.create_dataset('XX', data=self.XX)
-			# iteration_group.create_dataset('YY', data=self.YY)
-			iteration_group.create_dataset('Vxe', data=Vxe2)
-			iteration_group.create_dataset('Vye', data=Vye2)
-			iteration_group.create_dataset('xa_extend', data=xa_e2)
-			iteration_group.create_dataset('ya_extend', data=ya_e2)
-			iteration_group.create_dataset('xa_orig', data=xa_orig2)
-			iteration_group.create_dataset('ya_orig', data=ya_orig2)
-			# Log the trail edge kutta condition point (extended off of the extended readings, in the global frame)
-			iteration_group.create_dataset('x_trail', data=extendedX2)
-			iteration_group.create_dataset('y_trail', data=extendedY2)
-			# log the intuitive position of the trail point (where you think it should be for the results that come from it)
-			iteration_group.create_dataset('x_trail_intuitive', data=int_X2)
-			iteration_group.create_dataset('y_trail_intuitive', data=int_Y2)
-			# log the current clover position as well for plotting marker location on map plot
-			iteration_group.create_dataset('x_clover_cur', data=x_cur2)
-			iteration_group.create_dataset('y_clover_cur', data=y_cur2)
-			iteration_group.create_dataset('time_actual', data=time2)
 
 
 			#-------------External LOG------------------
@@ -1275,17 +1220,13 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			# the readings row after row, the rows will have different lengths. h5 tries to convert it
 			# to numpy arrays which errors out because all the rows are differenet lengths. Se we have to log
 			# the lidar readings iteratively/seperately
-			# Ellipse estimations
-			iteration_group.create_dataset('xcp', data=xcp)
-			iteration_group.create_dataset('ycp', data=ycp)
-			iteration_group.create_dataset('a_fitp', data=a_fitp)
-			iteration_group.create_dataset('b_fitp', data=b_fitp)
-			iteration_group.create_dataset('thetap', data=thetap)
-			# Psi Calculations - prism
+			# Psi Calculations - second quadrant obstacle
 			iteration_group.create_dataset('x_cloverpe', data=x_pe)
 			iteration_group.create_dataset('vx_cloverpe', data=vx_pe)
 			iteration_group.create_dataset('y_cloverpe', data=y_pe)
 			iteration_group.create_dataset('vy_cloverpe', data=vy_pe)
+			iteration_group.create_dataset('z_cloverpe', data=z_pe)
+			iteration_group.create_dataset('vz_cloverpe', data=vz_pe)
 			iteration_group.create_dataset('psi_0p', data=psi_0p)
 			iteration_group.create_dataset('psi_1p', data=psi_1p)
 			iteration_group.create_dataset('r_cyl', data=r_cyl)
@@ -1293,17 +1234,13 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 
 			iteration_group = hf.create_group('LiDar_figure8_results')
-			# Ellipse estimations
-			iteration_group.create_dataset('xc', data=xc)
-			iteration_group.create_dataset('yc', data=yc)
-			iteration_group.create_dataset('a_fit', data=a_fit)
-			iteration_group.create_dataset('b_fit', data=b_fit)
-			iteration_group.create_dataset('theta', data=theta)
-			# Psi Calculations - cylinder
+			# Psi Calculations - cylinder first quadrant obstacle
 			iteration_group.create_dataset('x_cloverce', data=x_ce)
 			iteration_group.create_dataset('vx_cloverce', data=vx_ce)
 			iteration_group.create_dataset('y_cloverce', data=y_ce)
 			iteration_group.create_dataset('vy_cloverce', data=vy_ce)
+			iteration_group.create_dataset('z_cloverce', data=z_ce)
+			iteration_group.create_dataset('vz_cloverce', data=vz_ce)
 			iteration_group.create_dataset('psi_0', data=psi_0)
 			iteration_group.create_dataset('psi_1', data=psi_1)
 			iteration_group.create_dataset('r_cyl', data=r_rec)
@@ -1314,13 +1251,16 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			iteration_group = hf.create_group('Control_log')
 			iteration_group.create_dataset('x_clover', data=xf)
 			iteration_group.create_dataset('y_clover', data=yf)
+			iteration_group.create_dataset('z_clover', data=zf)
 			iteration_group.create_dataset('yaw_clover', data=YawF)
 			iteration_group.create_dataset('yaw_com', data=YawC)
 			iteration_group.create_dataset('yaw_error', data=eyaw)
 			iteration_group.create_dataset('velx_clover', data=velfx)
 			iteration_group.create_dataset('vely_clover', data=velfy)
+			iteration_group.create_dataset('velz_clover', data=velfz)
 			iteration_group.create_dataset('velx_com', data=velcx)
 			iteration_group.create_dataset('vely_com', data=velcy)
+			iteration_group.create_dataset('velz_com', data=velcz)
 			iteration_group.create_dataset('Ux_mpc', data=Ux)
 			iteration_group.create_dataset('Uy_mpc', data=Uy)
 			iteration_group.create_dataset('Uz_mpc', data=Uz)
@@ -1335,11 +1275,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			# Plot logged data for analyses and debugging
 			plt.figure(1)
 			plt.subplot(211)
-			plt.plot(xf,yf,'r',label='pos-clover')
-			plt.plot(xcom,ycom,'b',label='MPC-com')
-			ellipse = Ellipse(xy=(xc[0],yc[0]), width=2*a_fit[0], height=2*b_fit[0], angle=np.rad2deg(theta[0]),
-			edgecolor='b', fc='None', lw=2)
-			plt.gca().add_patch(ellipse)
+			plt.plot(xf,yf,zf,'r',label='pos-clover')
+			plt.plot(xcom,ycom,zcom,'b',label='MPC-com')
 			# plt.plot(self.posx,self.posy,'b--',label='x-com')
 			# plt.fill(xa[0],ya[0],'k') # plot first reading
 			plt.legend()
@@ -1360,7 +1297,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			
 			# Velocity plot
 			plt.figure(2)
-			plt.subplot(211)
+			plt.subplot(311)
 			plt.plot(velfx,'r',label='vx-vel')
 			plt.plot(velcx,'b',label='vx-MPC-com')
 			plt.plot(uVPM,'g',label='vx-VPM')
@@ -1368,20 +1305,19 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			plt.xlabel('Time [s]')
 			plt.legend()
 			plt.grid(True)
-			plt.subplot(212)
+			plt.subplot(312)
 			plt.plot(velfy,'r',label='vy-vel')
 			plt.plot(velcy,'b--',label='vy-MPC-com')
 			plt.plot(vVPM,'g',label='vy-VPM')
 			plt.legend()
 			plt.grid(True)
 			plt.ylabel('Position [m]')
-			# plt.subplot(313)
-			# plt.plot(evx,'r',label='evx')
-			# plt.plot(evy,'b',label='evy')
-			# plt.plot(eyaw,'g',label='eyaw')
-			# plt.ylabel('Error[m]')
-			# plt.xlabel('Time [s]')
-			# plt.legend()
+			plt.subplot(313)
+			plt.plot(velfz,'r',label='evx')
+			plt.plot(velcz,'b',label='evy')
+			plt.ylabel('vel[m/s]')
+			plt.xlabel('Time [s]')
+			plt.legend()
 			plt.grid(True)
 
 			plt.figure(3)
@@ -1407,18 +1343,13 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			plt.cla()
 			np.seterr(under="ignore")
 			# plt.streamplot(x_field,y_field,u_field,v_field,linewidth=1.0,density=40,color='r',arrowstyle='-',start_points=XYsl) # density = 40
-			plt.streamplot(x_field,y_field,Vxe1,Vye1,linewidth=1.0,density=40,color='r',arrowstyle='-',start_points=XYsl)
+			# plt.streamplot(x_field,y_field,Vxe,Vye1,linewidth=1.0,density=40,color='r',arrowstyle='-',start_points=XYsl)
 			plt.grid(True)
 			#plt.plot(XX,YY,marker='o',color='blue')
 			plt.axis('equal')
 			plt.xlim(xVals)
 			plt.ylim(yVals)
-			plt.plot(xa_e1, ya_e1,'-o' ,color = 'k',linewidth = 0.25)
 			plt.plot(xf,yf,'b',label='x-fol') # path taken by clover
-			plt.plot(extendedX1, extendedY1, 'o')
-			ellipse = Ellipse(xy=(xc[0],yc[0]), width=2*a_fit[0], height=2*b_fit[0], angle=np.rad2deg(theta[0]),
-			edgecolor='b', fc='None', lw=2)
-			plt.gca().add_patch(ellipse)
 			plt.xlabel('X Units')
 			plt.ylabel('Y Units')
 			plt.title('Streamlines with Stream Function Velocity Equations')
