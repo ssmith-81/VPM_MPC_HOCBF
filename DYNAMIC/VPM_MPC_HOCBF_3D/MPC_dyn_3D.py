@@ -163,8 +163,8 @@ uVPM = []
 vVPM = []
 
 # updated velocity field plot
-nGridX = 20  # 20                                                         # X-grid for streamlines and contours
-nGridY = 20  # 20                                                       # Y-grid for streamlines and contours
+nGridX = 23  # 20                                                         # X-grid for streamlines and contours
+nGridY = 23  # 20                                                       # Y-grid for streamlines and contours
 x_field = np.zeros((nGridX, nGridY))# np.zeros((30, 30))
 y_field = np.zeros((nGridX, nGridY)) # np.zeros((30, 30))
 u_field = np.zeros((nGridX, nGridY))
@@ -207,7 +207,7 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 
 # Create a HDF5 file name
 # Open the HDF5 file globally
-file_name = 'mpc_dynamic_test7.h5' # 'mpc_static.h5'
+file_name = 'mpc_dynamic_test9.h5' # 'mpc_static.h5'
 
 # Construct the absolute path to the HDF5 file
 absolute_file_path = os.path.join(script_dir, file_name)
@@ -509,7 +509,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			# This function is used to calculate the psi 0 ans 1 values for this 3D simulation case
 
 			#--------------Obstacle parameters-----------------------------
-			self.SF = 1.0 # safety factor distance from the obstcle (set as the width of the Clover)
+			self.SF = 1.3 # safety factor distance from the obstcle (set as the width of the Clover)
 			self.SFp = 1.2 # safety factor for prism
 			self.cyl_rad = 1.5 # [m] radius of the cylinder
 			self.rec_rad = 1.25 # [m] half of the longest side of the prism
@@ -590,15 +590,15 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 	class clover:
 
-		def __init__(self, FLIGHT_ALTITUDE = 3.2, RATE = 50, RADIUS = 3.5, V_des = 0.6, N_horizon=25, T_horizon=5.0, REF_FRAME = 'map'): # rate = 50hz radius = 5m cycle_s = 25 N_h = 25, T_h = 5
+		def __init__(self, FLIGHT_ALTITUDE = 3.7, RATE = 50, RADIUS = 3.5, V_des = 0.6, N_horizon=25, T_horizon=5.0, REF_FRAME = 'map'): # rate = 50hz radius = 5m cycle_s = 25 N_h = 25, T_h = 5
 
 			# Note on N_horizon and T_horizon: with how I have things now, set T_horizon higher to react quicker to obstacles, but if you increase, this increases the time ahead of the first shooting node some 
 			# which is which may increase speed some. N_horizon, increase to slow drone down some and react faster to obstacles. Lower, increases time to first shoting node and increases speed
 
 			# Define the sink location and strength
 			self.g_sink = 2.4
-			self.xsi = 20 # 20
-			self.ysi = 20 # 20
+			self.xsi = 23 # 20
+			self.ysi = 23 # 20
 
 			# Define the source strength and location
 			self.g_source = 0.9
@@ -625,7 +625,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			self.v = 0
 
 			# Define the max velocity allowed for the Clover
-			self.vel_max = 0.85 # [m/s] 0.65
+			self.vel_max = 0.95 # [m/s] 0.65
 
 			# #-------------------- Offline Panel Calculations---------------------------------------------------
 
@@ -636,8 +636,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			# Grid parameters
 			self.nGridX = 20;  # 20 is good                                                         # X-grid for streamlines and contours
 			self.nGridY = 20;  # 20 is good                                                    # Y-grid for streamlines and contours
-			self.xVals  = [-1, 21];  # ensured it is extended past the domain incase the clover leaves domain             # X-grid extents [min, max]
-			self.yVals  = [-1, 21];  #-0.3;0.3                                                 # Y-grid extents [min, max]
+			self.xVals  = [-1, 24];  # ensured it is extended past the domain incase the clover leaves domain             # X-grid extents [min, max]
+			self.yVals  = [-1, 24];  #-0.3;0.3                                                 # Y-grid extents [min, max]
 
 			# Define Lidar range (we will set parameters to update grid resolution within detection range):
 			self.lidar_range = 3.5 # [m]
@@ -732,7 +732,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			
 
 			#--------------Obstacle parameters-----------------------------
-			self.SF = 1.0 # safety factor distance from the obstcle (set as the width of the Clover)
+			self.SF = 1.3 # safety factor distance from the obstcle (set as the width of the Clover)
 			self.cyl_rad = 1.5 # [m] radius of the cylinder
 			# Center of the cylinder location for experiment
 			self.x_cyl = 6.0
@@ -1046,8 +1046,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 						
 						r = self.SF + self.cyl_rad
 						
-						# self.acados_solver.set(j, "p", np.array([self.obs_x2[j],self.obs_vx2[j],self.obs_ax2[j],self.obs_y2[j],self.obs_vy2[j],self.obs_ay2[j],self.obs_z2[j],self.obs_vz2[j],self.obs_az2[j], r])) # set the obstacle dynamics [x,vx,ax,y,vy,ay,z,vz,az] dynamic obstacle
-						self.acados_solver.set(j, "p", np.array([40,0,0,40,0,0,40,0,0, r])) # Assuming a static obstacle far away
+						self.acados_solver.set(j, "p", np.array([self.obs_x2[j],self.obs_vx2[j],self.obs_ax2[j],self.obs_y2[j],self.obs_vy2[j],self.obs_ay2[j],self.obs_z2[j],self.obs_vz2[j],self.obs_az2[j], r])) # set the obstacle dynamics [x,vx,ax,y,vy,ay,z,vz,az] dynamic obstacle
+						# self.acados_solver.set(j, "p", np.array([40,0,0,40,0,0,40,0,0, r])) # Assuming a static obstacle far away
 					else:
    					 # Perform some default action if none of the conditions are met
 					
@@ -1287,6 +1287,12 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 			# debug section
 			# Plot logged data for analyses and debugging
+			ax = plt.figure(11).add_subplot(projection='3d')
+			ax.plot(xf,yf,zf,'r',label='pos-clover')
+			ax.set_xlabel('X')
+			ax.set_ylabel('Y')
+			ax.set_zlabel('Z')
+
 			plt.figure(1)
 			plt.subplot(211)
 			plt.plot(xf,yf,zf,'r',label='pos-clover')

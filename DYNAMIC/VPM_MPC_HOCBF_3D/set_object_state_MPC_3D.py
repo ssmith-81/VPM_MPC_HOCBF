@@ -66,18 +66,24 @@ PI_2 = math.pi/2
 # Figure-8 obstacle
 xf = []
 yf = []
+zf = []
 vxf = []
 vyf = []
+vzf = []
 axf = []
 ayf = []
+azf = []
 
 # Circle obstacle
 xc = []
 yc = []
+zc = []
 vxc = []
 vyc = []
+vzc = []
 axc = []
 ayc = []
+azc = []
 
 # Analyze observer for obstacle 1
 x_obs=[]
@@ -88,6 +94,10 @@ y_obs=[]
 vy_obs=[]
 ay_obs=[]
 
+z_obs=[]
+vz_obs=[]
+az_obs=[]
+
 # Analyze observer for obstacle 2
 x_obs2=[]
 vx_obs2=[]
@@ -96,6 +106,10 @@ ax_obs2=[]
 y_obs2=[]
 vy_obs2=[]
 ay_obs2=[]
+
+z_obs2=[]
+vz_obs2=[]
+az_obs2=[]
 
 
 # Log the time for the position control variables
@@ -108,7 +122,7 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 
 # Create a HDF5 file name
 # Open the HDF5 file globally
-file_name = 'set_obs7.h5'
+file_name = 'set_obs9.h5'
 
 # Construct the absolute path to the HDF5 file
 absolute_file_path = os.path.join(script_dir, file_name)
@@ -147,7 +161,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			self.RATE            =  RATE#self.N_horizon/self.T_horizon # i think this makes sense, because dt = self.T_horizon/self.N_horizon
 			self.RADIUS          = RADIUS                   # radius of figure 8 in meters
 			self.CYCLE_S         = CYCLE_S                  # time to complete one figure 8 cycle in seconds
-			self.CYCLE_C         = 7.7              # Cycle time for the circle
+			self.CYCLE_C         = 9.0              # Cycle time for the circle
 			self.STEPS           = int( self.CYCLE_S * self.RATE )
 			self.STEPS_C           = int( self.CYCLE_C * self.RATE )
 			self.FRAME           = REF_FRAME                # Reference frame for complex trajectory tracking
@@ -158,13 +172,13 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			self.dt_ref = int(self.N_steps/self.N_horizon) # This is the amount of steps ahead within the reference trajectory array, per iteration in the prediction horizon
 
 			# Torus curve parameters
-			self.R = 2.0
-			self.r_torus = 0.7
+			self.R = 3.0
+			self.r_torus = 1.5
 
 
 			# sink location
-			self.xsi = 20
-			self.ysi = 20
+			self.xsi = 23
+			self.ysi = 23
 
 
 			self.current_state = State()
@@ -272,10 +286,10 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				
 				# Position (torus)
 				# https:#www.wolframalpha.com/input/?i=%28-r*cos%28a%29*sin%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29
-				posx[i] = (R+r_torus*c)*c + 7
+				posx[i] = (R+r_torus*c)*c + 6
 				# https:#www.wolframalpha.com/input/?i=%28r*cos%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29
-				posy[i] =  (R+r_torus*c)*s + 7
-				posz[i] =  r_torus*s +5.0
+				posy[i] =  (R+r_torus*c)*s + 6
+				posz[i] =  r_torus*s +4.0
 
 				# Velocity (torus)
 				# https:#www.wolframalpha.com/input/?i=derivative+of+%28-r*cos%28a%29*sin%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29+wrt+a
@@ -310,24 +324,24 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 				# Position (Lissajous Figures)
 				# https:#www.wolframalpha.com/input/?i=%28-r*cos%28a%29*sin%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29
-				posx2[i] = s4 + 10
+				posx2[i] = 2.5*s4 + 18
 				# https:#www.wolframalpha.com/input/?i=%28r*cos%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29
-				posy2[i] = s2 + 10
-				posz2[i] =  s + 1.5
+				posy2[i] = 2.5*s2 + 18
+				posz2[i] =  2.5*s + 3.0
 
 				# Velocity (Lissajous Figures)
 				# https:#www.wolframalpha.com/input/?i=derivative+of+%28-r*cos%28a%29*sin%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29+wrt+a
-				velx2[i] =  dadt_c*4*c4
+				velx2[i] =  2.5*dadt_c*4*c4
 				# https:#www.wolframalpha.com/input/?i=derivative+of+%28r*cos%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29+wrt+a
-				vely2[i] =  dadt_c*2*c2
-				velz2[i] =  dadt_c*c
+				vely2[i] =  2.5*dadt_c*2*c2
+				velz2[i] =  2.5*dadt_c*c
 
 				# Acceleration (Lissajous Figures)
 				# https:#www.wolframalpha.com/input/?i=second+derivative+of+%28-r*cos%28a%29*sin%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29+wrt+a
-				afx2[i] =  -dadt_c*dadt_c*16*s4
+				afx2[i] =  -2.5*dadt_c*dadt_c*16*s4
 				# https:#www.wolframalpha.com/input/?i=second+derivative+of+%28r*cos%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29+wrt+a
-				afy2[i] =  -dadt_c*dadt_c*4*s2
-				afz2[i] =  -dadt_c*dadt_c*s
+				afy2[i] =  -2.5*dadt_c*dadt_c*4*s2
+				afz2[i] =  -2.5*dadt_c*dadt_c*s
 
 			
 			# Define object that will be published
@@ -335,7 +349,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			state_msg_circle = ModelState()
 
 			state_msg_8.model_name = 'Big box 4'
-			state_msg_circle.model_name = 'unit_sphere'
+			state_msg_circle.model_name = 'Boxes large on pallet'
 			rr = rospy.Rate(self.RATE)
 			k=0
 			q = 0
@@ -385,18 +399,24 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 				xf.append(posx[k])
 				yf.append(posy[k])
+				zf.append(posz[k])
 				vxf.append(velx[k])
 				vyf.append(vely[k])
+				vzf.append(velz[k])
 				axf.append(afx[k])
 				ayf.append(afy[k])
+				azf.append(afz[k])
 
 				# Circle obstacle
 				xc.append(posx2[q])
 				yc.append(posy2[q])
+				zc.append(posz2[q])
 				vxc.append(velx2[q])
 				vyc.append(vely2[q])
+				vzc.append(velz2[q])
 				axc.append(afx2[q])
 				ayc.append(afy2[q])
+				azc.append(afz2[q])
 
 				 # Get the actual time:
 				current_time = rospy.Time.now()
@@ -641,7 +661,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 	if __name__ == '__main__':
 		try:
 			# Define the performance parameters here which starts the script
-			q=clover(FLIGHT_ALTITUDE = 1.749502, RATE = 50, RADIUS = 1.1, CYCLE_S = 4.8, REF_FRAME = 'aruco_map', N_horizon = 25, T_horizon = 5) # cycle = 25for slow obstacle radius = 3.3 # radius = 1.6
+			q=clover(FLIGHT_ALTITUDE = 1.749502, RATE = 50, RADIUS = 1.1, CYCLE_S = 4.2, REF_FRAME = 'aruco_map', N_horizon = 25, T_horizon = 5) # cycle = 25for slow obstacle radius = 3.3 # radius = 1.6
 			
 			q.main()
 
@@ -650,17 +670,23 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			iteration_group = hf.create_group('Control_log')
 			iteration_group.create_dataset('xf', data=xf)
 			iteration_group.create_dataset('yf', data=yf)
+			iteration_group.create_dataset('zf', data=zf)
 			iteration_group.create_dataset('vxf', data=vxf)
 			iteration_group.create_dataset('vyf', data=vyf)
+			iteration_group.create_dataset('vzf', data=vzf)
 			iteration_group.create_dataset('axf', data=axf)
 			iteration_group.create_dataset('ayf', data=ayf)
+			iteration_group.create_dataset('azf', data=azf)
 
 			iteration_group.create_dataset('xc', data=xc)
 			iteration_group.create_dataset('yc', data=yc)
+			iteration_group.create_dataset('zc', data=zc)
 			iteration_group.create_dataset('vxc', data=vxc)
 			iteration_group.create_dataset('vyc', data=vyc)
+			iteration_group.create_dataset('vzc', data=vzc)
 			iteration_group.create_dataset('axc', data=axc)
 			iteration_group.create_dataset('ayc', data=ayc)
+			iteration_group.create_dataset('azc', data=azc)
 			
 			#time_now = np.array(time_now)
 			iteration_group.create_dataset('time_now', data=time_now)
@@ -687,7 +713,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			iteration_group.create_dataset('time_now', data=time_obs)
 			# Debug section, need matplotlib to plot the results for SITL
 
-			plt.figure(8)
+			plt.figure(9)
 			plt.subplot(211)
 			plt.plot(time_now,xf,'r',label='x-pos')
 			plt.plot(time_obs,x_obs,'g',label='x-obs')
@@ -704,7 +730,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			plt.ylabel('Velocity [m/s]')
 			plt.xlabel('Time [s]')
 
-			plt.figure(9)
+			plt.figure(10)
 			# plt.subplot(211)
 			plt.plot(time_now, axf,'r',label='x-acc')
 			plt.plot(time_obs,ax_obs,'g',label='ax-obs')

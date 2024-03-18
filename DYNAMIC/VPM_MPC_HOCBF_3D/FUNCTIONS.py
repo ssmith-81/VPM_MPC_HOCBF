@@ -130,7 +130,7 @@ def acados_settings(N_horizon, T_horizon):
 		# TODO Update obstacle states here
 		# State = x_obs, vx_obs, ax_obs, y_obs, vy_obs, ay_obs,  z_obs, vz_obs, az_obs
 		q1 = 15#15
-		q2 = 10#10
+		q2 = 12#10
 		delta_p = vertcat(model.x[0]-model.p[0], model.x[2] - model.p[3],model.x[4] - model.p[6])
 		delta_v = vertcat(model.x[1] - model.p[1], model.x[3] - model.p[4], model.x[5] - model.p[7])
 		delta_a = vertcat(model.u[0]-model.p[2], model.u[1] - model.p[5], model.u[2] - model.p[8])
@@ -155,8 +155,8 @@ def acados_settings(N_horizon, T_horizon):
 		ocp.constraints.Jsh = np.eye(1)
 
 		# # slacks
-		L2_pen = 1e5 # 1e4
-		L1_pen = 1e4  #1e3
+		L2_pen = 1e7 # 1e4
+		L1_pen = 1e6  #1e3
 
 		ocp.cost.Zl = L2_pen*np.ones((1,)) # Diagonal of hessian WRT lower slack
 		ocp.cost.Zu = L2_pen*np.ones((1,))
