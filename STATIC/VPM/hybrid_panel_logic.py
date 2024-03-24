@@ -103,7 +103,7 @@ eyaw=[]
 
 # Create a HDF5 file name
 # Open the HDF5 file globally
-file_name = 'test1.h5'
+file_name = 'test4.h5'
  # Open the HDF5 file for writing
 with h5py.File(file_name, 'a') as hf:
 
