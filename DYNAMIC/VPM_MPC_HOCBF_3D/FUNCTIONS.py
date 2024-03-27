@@ -129,8 +129,8 @@ def acados_settings(N_horizon, T_horizon):
 		r = model.p[9] # 1.2
 		# TODO Update obstacle states here
 		# State = x_obs, vx_obs, ax_obs, y_obs, vy_obs, ay_obs,  z_obs, vz_obs, az_obs
-		q1 = 15#15
-		q2 = 12#10
+		q1 = 8#15
+		q2 = 6#10
 		delta_p = vertcat(model.x[0]-model.p[0], model.x[2] - model.p[3],model.x[4] - model.p[6])
 		delta_v = vertcat(model.x[1] - model.p[1], model.x[3] - model.p[4], model.x[5] - model.p[7])
 		delta_a = vertcat(model.u[0]-model.p[2], model.u[1] - model.p[5], model.u[2] - model.p[8])

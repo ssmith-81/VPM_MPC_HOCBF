@@ -207,7 +207,7 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 
 # Create a HDF5 file name
 # Open the HDF5 file globally
-file_name = 'mpc_dynamic_test9.h5' # 'mpc_static.h5'
+file_name = 'mpc_dynamic_test13.h5' # 'mpc_static.h5'
 
 # Construct the absolute path to the HDF5 file
 absolute_file_path = os.path.join(script_dir, file_name)
@@ -532,8 +532,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				norm_delta_v = np.linalg.norm(delta_v, ord=2)  # Euclidean norm
 
 				# constants
-				q1 = 15#15
-				q2 = 10#10
+				q1 = 8#15
+				q2 = 6#10
 				#print(max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8)) # woow, some pretty unstacle shapes come out of this on the prism
 				r = self.SF + 1.5#max(ellipse_model.params[2], ellipse_model.params[3])#self.cyl_rad #max(max(ellipse_model.params[2], ellipse_model.params[3]),0.8) # make sure it is at least giving 0.8, where the max prism radius is 1.25 i believe
 
@@ -564,8 +564,8 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				norm_delta_v = np.linalg.norm(delta_v, ord=2)  # Euclidean norm
 
 				# constants
-				q1 = 15#15
-				q2 = 10#10
+				q1 = 8#15
+				q2 = 6#10
 				r = self.SF + 1.5#max(ellipse_model.params[2], ellipse_model.params[3])
 
 				self.psi_0 = norm_delta_p - r
@@ -590,7 +590,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 
 	class clover:
 
-		def __init__(self, FLIGHT_ALTITUDE = 3.7, RATE = 50, RADIUS = 3.5, V_des = 0.6, N_horizon=25, T_horizon=5.0, REF_FRAME = 'map'): # rate = 50hz radius = 5m cycle_s = 25 N_h = 25, T_h = 5
+		def __init__(self, FLIGHT_ALTITUDE = 3.8, RATE = 50, RADIUS = 3.5, V_des = 0.6, N_horizon=25, T_horizon=5.0, REF_FRAME = 'map'): # rate = 50hz radius = 5m cycle_s = 25 N_h = 25, T_h = 5
 
 			# Note on N_horizon and T_horizon: with how I have things now, set T_horizon higher to react quicker to obstacles, but if you increase, this increases the time ahead of the first shooting node some 
 			# which is which may increase speed some. N_horizon, increase to slow drone down some and react faster to obstacles. Lower, increases time to first shoting node and increases speed
@@ -625,7 +625,7 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			self.v = 0
 
 			# Define the max velocity allowed for the Clover
-			self.vel_max = 0.95 # [m/s] 0.65
+			self.vel_max = 1.0 # [m/s] 0.65
 
 			# #-------------------- Offline Panel Calculations---------------------------------------------------
 
@@ -1285,127 +1285,127 @@ with h5py.File(absolute_file_path, 'a') as hf:
                 #------------------------------------------
 			
 
-			# debug section
-			# Plot logged data for analyses and debugging
-			ax = plt.figure(11).add_subplot(projection='3d')
-			ax.plot(xf,yf,zf,'r',label='pos-clover')
-			ax.set_xlabel('X')
-			ax.set_ylabel('Y')
-			ax.set_zlabel('Z')
+			# # debug section
+			# # Plot logged data for analyses and debugging
+			# ax = plt.figure(11).add_subplot(projection='3d')
+			# ax.plot(xf,yf,zf,'r',label='pos-clover')
+			# ax.set_xlabel('X')
+			# ax.set_ylabel('Y')
+			# ax.set_zlabel('Z')
 
-			plt.figure(1)
-			plt.subplot(211)
-			plt.plot(xf,yf,zf,'r',label='pos-clover')
-			plt.plot(xcom,ycom,zcom,'b',label='MPC-com')
-			# plt.plot(self.posx,self.posy,'b--',label='x-com')
-			# plt.fill(xa[0],ya[0],'k') # plot first reading
-			plt.legend()
-			plt.grid(True)
-			#plt.subplot(312)
-			#plt.plot(yf,'r',label='y-fol')
-			#plt.plot(ya,'b--',label='y-obs')
-			#plt.legend()
-			#plt.grid(True)
-			#plt.ylabel('Position [m]')
-			plt.subplot(212)
-			plt.plot(YawF,'b',label='yaw-F')
-			plt.plot(YawC,'g',label='yaw-C')
-			plt.legend()
-			plt.grid(True)
-			plt.ylabel('yaw [deg]')
-			plt.xlabel('Time [s]')
+			# plt.figure(1)
+			# plt.subplot(211)
+			# plt.plot(xf,yf,zf,'r',label='pos-clover')
+			# plt.plot(xcom,ycom,zcom,'b',label='MPC-com')
+			# # plt.plot(self.posx,self.posy,'b--',label='x-com')
+			# # plt.fill(xa[0],ya[0],'k') # plot first reading
+			# plt.legend()
+			# plt.grid(True)
+			# #plt.subplot(312)
+			# #plt.plot(yf,'r',label='y-fol')
+			# #plt.plot(ya,'b--',label='y-obs')
+			# #plt.legend()
+			# #plt.grid(True)
+			# #plt.ylabel('Position [m]')
+			# plt.subplot(212)
+			# plt.plot(YawF,'b',label='yaw-F')
+			# plt.plot(YawC,'g',label='yaw-C')
+			# plt.legend()
+			# plt.grid(True)
+			# plt.ylabel('yaw [deg]')
+			# plt.xlabel('Time [s]')
 			
-			# Velocity plot
-			plt.figure(2)
-			plt.subplot(311)
-			plt.plot(velfx,'r',label='vx-vel')
-			plt.plot(velcx,'b',label='vx-MPC-com')
-			plt.plot(uVPM,'g',label='vx-VPM')
-			plt.ylabel('vel[m/s]')
-			plt.xlabel('Time [s]')
-			plt.legend()
-			plt.grid(True)
-			plt.subplot(312)
-			plt.plot(velfy,'r',label='vy-vel')
-			plt.plot(velcy,'b--',label='vy-MPC-com')
-			plt.plot(vVPM,'g',label='vy-VPM')
-			plt.legend()
-			plt.grid(True)
-			plt.ylabel('Position [m]')
-			plt.subplot(313)
-			plt.plot(velfz,'r',label='evx')
-			plt.plot(velcz,'b',label='evy')
-			plt.ylabel('vel[m/s]')
-			plt.xlabel('Time [s]')
-			plt.legend()
-			plt.grid(True)
+			# # Velocity plot
+			# plt.figure(2)
+			# plt.subplot(311)
+			# plt.plot(velfx,'r',label='vx-vel')
+			# plt.plot(velcx,'b',label='vx-MPC-com')
+			# plt.plot(uVPM,'g',label='vx-VPM')
+			# plt.ylabel('vel[m/s]')
+			# plt.xlabel('Time [s]')
+			# plt.legend()
+			# plt.grid(True)
+			# plt.subplot(312)
+			# plt.plot(velfy,'r',label='vy-vel')
+			# plt.plot(velcy,'b--',label='vy-MPC-com')
+			# plt.plot(vVPM,'g',label='vy-VPM')
+			# plt.legend()
+			# plt.grid(True)
+			# plt.ylabel('Position [m]')
+			# plt.subplot(313)
+			# plt.plot(velfz,'r',label='evx')
+			# plt.plot(velcz,'b',label='evy')
+			# plt.ylabel('vel[m/s]')
+			# plt.xlabel('Time [s]')
+			# plt.legend()
+			# plt.grid(True)
 
-			plt.figure(3)
-			plt.subplot(311)
-			plt.plot(Ux,'r')
-			plt.legend()
-			plt.grid(True)
-			plt.ylabel('Ux')
-			plt.subplot(312)
-			plt.plot(Uy,'b')
-			plt.legend()
-			plt.grid(True)
-			plt.ylabel('Uy')
-			plt.subplot(313)
-			plt.plot(Uz,'r')
-			plt.legend()
-			plt.grid(True)
-			plt.ylabel('T_input')
-			plt.xlabel('Time [s]')
+			# plt.figure(3)
+			# plt.subplot(311)
+			# plt.plot(Ux,'r')
+			# plt.legend()
+			# plt.grid(True)
+			# plt.ylabel('Ux')
+			# plt.subplot(312)
+			# plt.plot(Uy,'b')
+			# plt.legend()
+			# plt.grid(True)
+			# plt.ylabel('Uy')
+			# plt.subplot(313)
+			# plt.plot(Uz,'r')
+			# plt.legend()
+			# plt.grid(True)
+			# plt.ylabel('T_input')
+			# plt.xlabel('Time [s]')
 			
 
-			fig = plt.figure(4)
-			plt.cla()
-			np.seterr(under="ignore")
-			# plt.streamplot(x_field,y_field,u_field,v_field,linewidth=1.0,density=40,color='r',arrowstyle='-',start_points=XYsl) # density = 40
-			# plt.streamplot(x_field,y_field,Vxe,Vye1,linewidth=1.0,density=40,color='r',arrowstyle='-',start_points=XYsl)
-			plt.grid(True)
-			#plt.plot(XX,YY,marker='o',color='blue')
-			plt.axis('equal')
-			plt.xlim(xVals)
-			plt.ylim(yVals)
-			plt.plot(xf,yf,'b',label='x-fol') # path taken by clover
-			plt.xlabel('X Units')
-			plt.ylabel('Y Units')
-			plt.title('Streamlines with Stream Function Velocity Equations')
+			# fig = plt.figure(4)
+			# plt.cla()
+			# np.seterr(under="ignore")
+			# # plt.streamplot(x_field,y_field,u_field,v_field,linewidth=1.0,density=40,color='r',arrowstyle='-',start_points=XYsl) # density = 40
+			# # plt.streamplot(x_field,y_field,Vxe,Vye1,linewidth=1.0,density=40,color='r',arrowstyle='-',start_points=XYsl)
+			# plt.grid(True)
+			# #plt.plot(XX,YY,marker='o',color='blue')
+			# plt.axis('equal')
+			# plt.xlim(xVals)
+			# plt.ylim(yVals)
+			# plt.plot(xf,yf,'b',label='x-fol') # path taken by clover
+			# plt.xlabel('X Units')
+			# plt.ylabel('Y Units')
+			# plt.title('Streamlines with Stream Function Velocity Equations')
 
-			plt.figure(5)
-			plt.plot(psi_0,'r',label='psi_0')
-			plt.plot(psi_1,'b',label='psi_1')
-			plt.ylabel('b(x)')
-			plt.xlabel('Time [s]')
-			plt.legend()
-			plt.grid(True)
+			# plt.figure(5)
+			# plt.plot(psi_0,'r',label='psi_0')
+			# plt.plot(psi_1,'b',label='psi_1')
+			# plt.ylabel('b(x)')
+			# plt.xlabel('Time [s]')
+			# plt.legend()
+			# plt.grid(True)
 
-			plt.figure(6)
-			plt.plot(xc, yc, 'ro', label='ellipse-center', markersize=3)  # 'ro' for red circles
-			plt.ylabel('center[m]')
-			plt.xlabel('Time [s]')
-			plt.legend()
-			plt.grid(True)
+			# plt.figure(6)
+			# plt.plot(xc, yc, 'ro', label='ellipse-center', markersize=3)  # 'ro' for red circles
+			# plt.ylabel('center[m]')
+			# plt.xlabel('Time [s]')
+			# plt.legend()
+			# plt.grid(True)
 
-			plt.figure(7)
-			plt.plot(psi_0p,'r',label='psi_0p')
-			plt.plot(psi_1p,'b',label='psi_1p')
-			# plt.ylim(-2, 30)
-			plt.ylabel('b(x)')
-			plt.xlabel('Time [s]')
-			plt.legend()
-			plt.grid(True)
+			# plt.figure(7)
+			# plt.plot(psi_0p,'r',label='psi_0p')
+			# plt.plot(psi_1p,'b',label='psi_1p')
+			# # plt.ylim(-2, 30)
+			# plt.ylabel('b(x)')
+			# plt.xlabel('Time [s]')
+			# plt.legend()
+			# plt.grid(True)
 
-			plt.figure(8)
-			plt.plot(xcp, ycp, 'ro', label='ellipse-center', markersize=3)  # 'ro' for red circles
-			plt.ylabel('center[m]')
-			plt.xlabel('Time [s]')
-			plt.legend()
-			plt.grid(True)
+			# plt.figure(8)
+			# plt.plot(xcp, ycp, 'ro', label='ellipse-center', markersize=3)  # 'ro' for red circles
+			# plt.ylabel('center[m]')
+			# plt.xlabel('Time [s]')
+			# plt.legend()
+			# plt.grid(True)
 
-			plt.show()
+			# plt.show()
 			
 		except rospy.ROSInterruptException:
 			pass

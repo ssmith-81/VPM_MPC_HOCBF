@@ -122,7 +122,7 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 
 # Create a HDF5 file name
 # Open the HDF5 file globally
-file_name = 'set_obs9.h5'
+file_name = 'set_obs13.h5'
 
 # Construct the absolute path to the HDF5 file
 absolute_file_path = os.path.join(script_dir, file_name)
@@ -286,10 +286,10 @@ with h5py.File(absolute_file_path, 'a') as hf:
 				
 				# Position (torus)
 				# https:#www.wolframalpha.com/input/?i=%28-r*cos%28a%29*sin%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29
-				posx[i] = (R+r_torus*c)*c + 6
+				posx[i] = (R+r_torus*c)*c + 6.0
 				# https:#www.wolframalpha.com/input/?i=%28r*cos%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29
-				posy[i] =  (R+r_torus*c)*s + 6
-				posz[i] =  r_torus*s +4.0
+				posy[i] =  (R+r_torus*c)*s + 6.0
+				posz[i] =  r_torus*s +3.8
 
 				# Velocity (torus)
 				# https:#www.wolframalpha.com/input/?i=derivative+of+%28-r*cos%28a%29*sin%28a%29%29%2F%28%28sin%28a%29%5E2%29%2B1%29+wrt+a
@@ -713,41 +713,41 @@ with h5py.File(absolute_file_path, 'a') as hf:
 			iteration_group.create_dataset('time_now', data=time_obs)
 			# Debug section, need matplotlib to plot the results for SITL
 
-			plt.figure(9)
-			plt.subplot(211)
-			plt.plot(time_now,xf,'r',label='x-pos')
-			plt.plot(time_obs,x_obs,'g',label='x-obs')
-			plt.plot(time_now,yf,'b--',label='y-pos')
-			plt.legend()
-			plt.grid(True)
-			plt.ylabel('Position [m]')
-			plt.subplot(212)
-			plt.plot(time_now,vxf,'r',label='x-vel')
-			plt.plot(time_obs,vx_obs,'g',label='vx-obs')
-			plt.plot(time_now,vyf,'b--',label='y-vel')
-			plt.legend()
-			plt.grid(True)
-			plt.ylabel('Velocity [m/s]')
-			plt.xlabel('Time [s]')
-
-			plt.figure(10)
+			# plt.figure(9)
 			# plt.subplot(211)
-			plt.plot(time_now, axf,'r',label='x-acc')
-			plt.plot(time_obs,ax_obs,'g',label='ax-obs')
-			plt.plot(time_now, ayf,'b--',label='y-acc')
-			plt.ylabel('af [m/s^2]')
-			plt.legend()
-			plt.grid(True)
-			# plt.subplot(212)
-			# plt.plot(t,yawc,'r',label='yaw')
-			# plt.ylabel('Magnitude')
-			# plt.xlabel('Time [s]')
-			# plt.plot(t,yaw_ratec,'b--',label='yaw_rate')
+			# plt.plot(time_now,xf,'r',label='x-pos')
+			# plt.plot(time_obs,x_obs,'g',label='x-obs')
+			# plt.plot(time_now,yf,'b--',label='y-pos')
 			# plt.legend()
 			# plt.grid(True)
-			plt.figure(10)
-			plt.plot(xf,yf, 'b')
-			plt.show()
+			# plt.ylabel('Position [m]')
+			# plt.subplot(212)
+			# plt.plot(time_now,vxf,'r',label='x-vel')
+			# plt.plot(time_obs,vx_obs,'g',label='vx-obs')
+			# plt.plot(time_now,vyf,'b--',label='y-vel')
+			# plt.legend()
+			# plt.grid(True)
+			# plt.ylabel('Velocity [m/s]')
+			# plt.xlabel('Time [s]')
+
+			# plt.figure(10)
+			# # plt.subplot(211)
+			# plt.plot(time_now, axf,'r',label='x-acc')
+			# plt.plot(time_obs,ax_obs,'g',label='ax-obs')
+			# plt.plot(time_now, ayf,'b--',label='y-acc')
+			# plt.ylabel('af [m/s^2]')
+			# plt.legend()
+			# plt.grid(True)
+			# # plt.subplot(212)
+			# # plt.plot(t,yawc,'r',label='yaw')
+			# # plt.ylabel('Magnitude')
+			# # plt.xlabel('Time [s]')
+			# # plt.plot(t,yaw_ratec,'b--',label='yaw_rate')
+			# # plt.legend()
+			# # plt.grid(True)
+			# plt.figure(10)
+			# plt.plot(xf,yf, 'b')
+			# plt.show()
 			
 		except rospy.ROSInterruptException:
 			pass
